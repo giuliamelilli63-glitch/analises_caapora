@@ -1,0 +1,114 @@
+# Ler a planilha
+dados <- read.csv2(
+  "inventario_completo_sem_inventarios_excluidos.csv",
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+# Padronizar temporariamente os nomes das colunas
+nomes_colunas <- tolower(
+  trimws(
+    iconv(
+      colnames(dados),
+      from = "",
+      to = "ASCII//TRANSLIT",
+      sub = ""
+    )
+  )
+)
+
+# Localizar as colunas
+col_especie <- which(nomes_colunas == "especie")
+col_identificacao <- which(nomes_colunas == "identificacao")
+
+# Conferir se as colunas foram encontradas
+if (length(col_especie) != 1) {
+  stop("A coluna 'especie' não foi encontrada ou está duplicada.")
+}
+
+if (length(col_identificacao) != 1) {
+  stop("A coluna 'identificacao' não foi encontrada ou está duplicada.")
+}
+
+# Padronizar temporariamente os valores da coluna especie
+especie <- tolower(
+  trimws(
+    iconv(
+      as.character(dados[[col_especie]]),
+      from = "",
+      to = "ASCII//TRANSLIT",
+      sub = ""
+    )
+  )
+)
+
+# Padronizar temporariamente os valores da coluna identificacao
+identificacao <- tolower(
+  trimws(
+    iconv(
+      as.character(dados[[col_identificacao]]),
+      from = "",
+      to = "ASCII//TRANSLIT",
+      sub = ""
+    )
+  )
+)
+
+# Identificar espécies sem identificação completa
+#
+# Remove exemplos como:
+# Inga_indet
+# Inga_sp
+# Inga_ssp
+# Piper_indet
+# indet
+# indet_indet
+# indet_sp
+# indet_t_
+# indet_tt_
+
+excluir_especie <-
+  grepl("_(indet|sp|ssp)_*$", especie) |
+  grepl("^indet($|_)", especie)
+
+# Identificar registros marcados como identificação incompleta
+excluir_identificacao <- identificacao == "incompleta"
+
+# Juntar os dois critérios
+excluir <- excluir_especie | excluir_identificacao
+
+# Criar a planilha limpa
+dados_limpos <- dados[
+  !excluir,
+  ,
+  drop = FALSE
+]
+
+# Salvar a planilha limpa
+write.csv2(
+  dados_limpos,
+  "inventario_completo_sem_indeterminadas.csv",
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+# Mostrar resumo
+cat("Total de espécies antes da limpeza:", nrow(dados), "\n")
+cat(
+  "Removidas pelo nome na coluna especie:",
+  sum(excluir_especie, na.rm = TRUE),
+  "\n"
+)
+cat(
+  "Marcadas como identificacao incompleta:",
+  sum(excluir_identificacao, na.rm = TRUE),
+  "\n"
+)
+cat(
+  "Total de linhas removidas:",
+  sum(excluir, na.rm = TRUE),
+  "\n"
+)
+cat("Total de espécies mantidas:", nrow(dados_limpos), "\n")
