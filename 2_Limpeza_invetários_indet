@@ -112,3 +112,12 @@ cat(
   "\n"
 )
 cat("Total de espécies mantidas:", nrow(dados_limpos), "\n")
+
+excluidas <- dados[excluir, ]
+
+View(excluidas)
+write.csv2(
+  excluidas,
+  "especies_excluidas.csv",
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
