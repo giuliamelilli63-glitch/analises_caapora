@@ -1,0 +1,581 @@
+# ============================================================
+# CONFERÊNCIA DE NOMES BOTÂNICOS COM O REFLORA
+# Arquivo Darwin Core: taxon.txt
+# ============================================================
+
+
+# ============================================================
+# 1. INSTALAR E CARREGAR OS PACOTES
+# ============================================================
+
+pacotes <- c("readxl", "writexl")
+
+for (p in pacotes) {
+  if (!requireNamespace(p, quietly = TRUE)) {
+    install.packages(p)
+  }
+}
+
+library(readxl)
+library(writexl)
+
+
+# ============================================================
+# 2. DEFINIR A PASTA E OS ARQUIVOS
+# ============================================================
+
+pasta <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/",
+  "Caapora/nomes_botanicos"
+)
+
+arquivo_taxon <- file.path(
+  pasta,
+  "dwca-lista_especies_flora_brasil-v393.428",
+  "taxon.txt"
+)
+
+# O script procura automaticamente:
+# especies.xlsx, especies.xls, especies.csv ou especies.txt
+
+possiveis_arquivos_especies <- c(
+  file.path(pasta, "especies.xlsx"),
+  file.path(pasta, "especies.xls"),
+  file.path(pasta, "especies.csv"),
+  file.path(pasta, "especies.txt")
+)
+
+arquivo_especies <- possiveis_arquivos_especies[
+  file.exists(possiveis_arquivos_especies)
+][1]
+
+if (is.na(arquivo_especies)) {
+  stop(
+    paste0(
+      "O arquivo 'especies' não foi encontrado na pasta:\n",
+      pasta,
+      "\n\nUse um destes nomes:\n",
+      "especies.xlsx\n",
+      "especies.xls\n",
+      "especies.csv\n",
+      "especies.txt"
+    )
+  )
+}
+
+if (!file.exists(arquivo_taxon)) {
+  stop(
+    paste0(
+      "O arquivo taxon.txt não foi encontrado em:\n",
+      arquivo_taxon
+    )
+  )
+}
+
+
+# ============================================================
+# 3. LER A TABELA DE ESPÉCIES
+# ============================================================
+
+extensao <- tolower(
+  tools::file_ext(arquivo_especies)
+)
+
+if (extensao %in% c("xlsx", "xls")) {
+  
+  especies <- read_excel(
+    arquivo_especies
+  )
+  
+  especies <- as.data.frame(
+    especies,
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  
+} else {
+  
+  # Primeiro tenta arquivo separado por ponto e vírgula
+  especies <- tryCatch(
+    read.csv2(
+      arquivo_especies,
+      header = TRUE,
+      stringsAsFactors = FALSE,
+      check.names = FALSE,
+      fileEncoding = "UTF-8"
+    ),
+    error = function(e) NULL
+  )
+  
+  # Caso só tenha uma coluna, tenta tabulação
+  if (is.null(especies) || ncol(especies) == 1) {
+    
+    especies <- read.delim(
+      arquivo_especies,
+      header = TRUE,
+      stringsAsFactors = FALSE,
+      check.names = FALSE,
+      fileEncoding = "UTF-8",
+      sep = "\t",
+      quote = "",
+      comment.char = ""
+    )
+  }
+}
+
+
+# ============================================================
+# 4. CONFERIR AS COLUNAS DA TABELA DE ESPÉCIES
+# ============================================================
+
+names(especies) <- trimws(
+  names(especies)
+)
+
+if (!"especie" %in% names(especies)) {
+  stop(
+    paste0(
+      "A tabela precisa possuir uma coluna chamada 'especie'.\n",
+      "Colunas encontradas:\n",
+      paste(names(especies), collapse = ", ")
+    )
+  )
+}
+
+if (!"especie_original" %in% names(especies)) {
+  warning(
+    "A coluna 'especie_original' não foi encontrada. ",
+    "A conferência continuará usando a coluna 'especie'."
+  )
+}
+
+
+# ============================================================
+# 5. LER O ARQUIVO TAXON.TXT
+# ============================================================
+
+taxon <- read.delim(
+  arquivo_taxon,
+  header = TRUE,
+  sep = "\t",
+  quote = "",
+  comment.char = "",
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "UTF-8",
+  na.strings = c("", "NA")
+)
+
+
+# ============================================================
+# 6. FUNÇÃO PARA PADRONIZAR OS NOMES
+# ============================================================
+
+padronizar_nome <- function(x) {
+  
+  x <- as.character(x)
+  
+  # Converter para minúsculas
+  x <- tolower(x)
+  
+  # Trocar underscore por espaço
+  x <- gsub(
+    "_",
+    " ",
+    x,
+    fixed = TRUE
+  )
+  
+  # Remover espaços repetidos
+  x <- gsub(
+    "[[:space:]]+",
+    " ",
+    x
+  )
+  
+  # Remover espaços no início e no final
+  x <- trimws(x)
+  
+  # Transformar textos vazios em NA
+  x[x == ""] <- NA_character_
+  
+  return(x)
+}
+
+
+# ============================================================
+# 7. PADRONIZAR OS NOMES DA TABELA DE ENTRADA
+# ============================================================
+
+especies$nome_busca <- padronizar_nome(
+  especies$especie
+)
+
+
+# ============================================================
+# 8. MANTER APENAS PLANTAS NO DARWIN CORE
+# ============================================================
+
+taxon_plantas <- taxon[
+  !is.na(taxon$kingdom) &
+    tolower(taxon$kingdom) == "plantae",
+  ,
+  drop = FALSE
+]
+
+cat(
+  "\nRegistros totais no taxon.txt:",
+  nrow(taxon),
+  "\n"
+)
+
+cat(
+  "Registros de Plantae:",
+  nrow(taxon_plantas),
+  "\n"
+)
+
+
+# ============================================================
+# 9. CRIAR O NOME SEM AUTORIA NO DARWIN CORE
+# ============================================================
+
+# O nome de comparação será formado por:
+# gênero + epíteto específico + epíteto infraespecífico
+
+taxon_plantas$nome_sem_autoria <- paste(
+  taxon_plantas$genus,
+  taxon_plantas$specificEpithet,
+  taxon_plantas$infraspecificEpithet
+)
+
+taxon_plantas$nome_sem_autoria <- gsub(
+  "\\bNA\\b",
+  "",
+  taxon_plantas$nome_sem_autoria
+)
+
+taxon_plantas$nome_sem_autoria <- gsub(
+  "[[:space:]]+",
+  " ",
+  taxon_plantas$nome_sem_autoria
+)
+
+taxon_plantas$nome_sem_autoria <- trimws(
+  taxon_plantas$nome_sem_autoria
+)
+
+taxon_plantas$nome_sem_autoria[
+  taxon_plantas$nome_sem_autoria == ""
+] <- NA_character_
+
+taxon_plantas$nome_busca <- padronizar_nome(
+  taxon_plantas$nome_sem_autoria
+)
+
+
+# ============================================================
+# 10. REMOVER REGISTROS SEM NOME PARA COMPARAÇÃO
+# ============================================================
+
+taxon_plantas <- taxon_plantas[
+  !is.na(taxon_plantas$nome_busca),
+  ,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 11. DEFINIR A PRIORIDADE QUANDO HOUVER MAIS DE UM RESULTADO
+# ============================================================
+
+# Primeiro: nome aceito
+# Depois: sinônimo
+# Depois: outros status
+
+taxon_plantas$prioridade <- ifelse(
+  taxon_plantas$taxonomicStatus == "NOME_ACEITO",
+  1,
+  ifelse(
+    taxon_plantas$taxonomicStatus == "SINONIMO",
+    2,
+    3
+  )
+)
+
+taxon_plantas <- taxon_plantas[
+  order(
+    taxon_plantas$nome_busca,
+    taxon_plantas$prioridade
+  ),
+  ,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 12. RESOLVER O NOME ACEITO
+# ============================================================
+
+# Para nomes aceitos:
+# acceptedNameUsage costuma estar vazio.
+# Nesse caso, scientificName é o próprio nome aceito.
+
+taxon_plantas$nome_aceito_reflora <- ifelse(
+  !is.na(taxon_plantas$acceptedNameUsage) &
+    trimws(taxon_plantas$acceptedNameUsage) != "",
+  taxon_plantas$acceptedNameUsage,
+  taxon_plantas$scientificName
+)
+
+
+# ============================================================
+# 13. SELECIONAR AS COLUNAS DO REFLORA
+# ============================================================
+
+taxon_selecionado <- taxon_plantas[
+  ,
+  c(
+    "nome_busca",
+    "taxonID",
+    "scientificName",
+    "nome_aceito_reflora",
+    "acceptedNameUsageID",
+    "kingdom",
+    "phylum",
+    "class",
+    "order",
+    "family",
+    "genus",
+    "specificEpithet",
+    "infraspecificEpithet",
+    "taxonRank",
+    "scientificNameAuthorship",
+    "taxonomicStatus",
+    "nomenclaturalStatus",
+    "references"
+  ),
+  drop = FALSE
+]
+
+
+# ============================================================
+# 14. MANTER APENAS UMA CORRESPONDÊNCIA POR NOME
+# ============================================================
+
+taxon_selecionado <- taxon_selecionado[
+  !duplicated(taxon_selecionado$nome_busca),
+  ,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 15. PROCURAR AS ESPÉCIES NO REFLORA
+# ============================================================
+
+posicao <- match(
+  especies$nome_busca,
+  taxon_selecionado$nome_busca
+)
+
+
+# ============================================================
+# 16. ACRESCENTAR AS INFORMAÇÕES À TABELA ORIGINAL
+# ============================================================
+
+resultado <- especies
+
+resultado$correspondencia_reflora <- ifelse(
+  !is.na(posicao),
+  "Correspondência exata",
+  "Sem correspondência"
+)
+
+resultado$taxonID_reflora <- taxon_selecionado$taxonID[
+  posicao
+]
+
+resultado$nome_encontrado_reflora <- taxon_selecionado$scientificName[
+  posicao
+]
+
+resultado$nome_aceito_reflora <- taxon_selecionado$nome_aceito_reflora[
+  posicao
+]
+
+resultado$acceptedNameUsageID_reflora <-
+  taxon_selecionado$acceptedNameUsageID[
+    posicao
+  ]
+
+resultado$reino_reflora <- taxon_selecionado$kingdom[
+  posicao
+]
+
+resultado$filo_reflora <- taxon_selecionado$phylum[
+  posicao
+]
+
+resultado$classe_reflora <- taxon_selecionado$class[
+  posicao
+]
+
+resultado$ordem_reflora <- taxon_selecionado$order[
+  posicao
+]
+
+resultado$familia_reflora <- taxon_selecionado$family[
+  posicao
+]
+
+resultado$genero_reflora <- taxon_selecionado$genus[
+  posicao
+]
+
+resultado$epiteto_especifico_reflora <-
+  taxon_selecionado$specificEpithet[
+    posicao
+  ]
+
+resultado$epiteto_infraespecifico_reflora <-
+  taxon_selecionado$infraspecificEpithet[
+    posicao
+  ]
+
+resultado$nivel_taxonomico_reflora <-
+  taxon_selecionado$taxonRank[
+    posicao
+  ]
+
+resultado$autoria_reflora <-
+  taxon_selecionado$scientificNameAuthorship[
+    posicao
+  ]
+
+resultado$status_taxonomico_reflora <-
+  taxon_selecionado$taxonomicStatus[
+    posicao
+  ]
+
+resultado$status_nomenclatural_reflora <-
+  taxon_selecionado$nomenclaturalStatus[
+    posicao
+  ]
+
+resultado$link_reflora <- taxon_selecionado$references[
+  posicao
+]
+
+
+# ============================================================
+# 17. RETIRAR A COLUNA AUXILIAR
+# ============================================================
+
+resultado$nome_busca <- NULL
+
+
+# ============================================================
+# 18. CRIAR TABELAS DE RESUMO
+# ============================================================
+
+com_correspondencia <- resultado[
+  resultado$correspondencia_reflora ==
+    "Correspondência exata",
+  ,
+  drop = FALSE
+]
+
+sem_correspondencia <- resultado[
+  resultado$correspondencia_reflora ==
+    "Sem correspondência",
+  ,
+  drop = FALSE
+]
+
+resumo <- data.frame(
+  categoria = c(
+    "Total de nomes consultados",
+    "Correspondência exata",
+    "Sem correspondência"
+  ),
+  quantidade = c(
+    nrow(resultado),
+    nrow(com_correspondencia),
+    nrow(sem_correspondencia)
+  ),
+  percentual = round(
+    c(
+      100,
+      nrow(com_correspondencia) /
+        nrow(resultado) * 100,
+      nrow(sem_correspondencia) /
+        nrow(resultado) * 100
+    ),
+    2
+  ),
+  stringsAsFactors = FALSE
+)
+
+
+# ============================================================
+# 19. SALVAR EM EXCEL
+# ============================================================
+
+arquivo_saida <- file.path(
+  pasta,
+  "especies_conferidas_reflora_taxon.xlsx"
+)
+
+write_xlsx(
+  list(
+    "Todas_especies" = resultado,
+    "Com_correspondencia" = com_correspondencia,
+    "Sem_correspondencia" = sem_correspondencia,
+    "Resumo" = resumo
+  ),
+  arquivo_saida
+)
+
+
+# ============================================================
+# 20. MOSTRAR O RESULTADO
+# ============================================================
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "CONFERÊNCIA FINALIZADA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Total de nomes:",
+  nrow(resultado),
+  "\n"
+)
+
+cat(
+  "Correspondências exatas:",
+  nrow(com_correspondencia),
+  "\n"
+)
+
+cat(
+  "Sem correspondência:",
+  nrow(sem_correspondencia),
+  "\n"
+)
+
+cat(
+  "\nArquivo salvo em:\n",
+  arquivo_saida,
+  "\n"
+)
+
+print(resumo)
