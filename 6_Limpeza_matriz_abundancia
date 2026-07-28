@@ -1,0 +1,301 @@
+# ============================================================
+# SELECIONAR NA MATRIZ DE ABUNDÂNCIA AS MESMAS ASSEMBLEIAS
+# UTILIZADAS NA MATRIZ DE PRESENÇA E AUSÊNCIA
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. Definir caminhos
+# ------------------------------------------------------------
+
+pasta_caapora <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/"
+)
+
+# Matriz original de abundância, antes do filtro de riqueza
+arquivo_abundancia <- file.path(
+  pasta_caapora,
+  "abundancia",
+  "inventario_completo_sem_indeterminadas.csv"
+)
+
+# Lista produzida no filtro da matriz de presença e ausência
+arquivo_selecionados_presenca <- file.path(
+  pasta_caapora,
+  "filtragem_riqueza",
+  "inventarios_selecionados_por_riqueza.csv"
+)
+
+# Pasta onde serão salvos os resultados da abundância
+pasta_saida <- file.path(
+  pasta_caapora,
+  "abundancia",
+  "filtragem_mesmos_inventarios_presenca"
+)
+
+dir.create(
+  pasta_saida,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+# ------------------------------------------------------------
+# 2. Ler a matriz de abundância
+# ------------------------------------------------------------
+
+abundancia <- read.csv2(
+  arquivo_abundancia,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+# Padronizar os nomes das colunas
+names(abundancia) <- trimws(names(abundancia))
+
+# Localizar a coluna de espécies
+col_especie <- which(
+  tolower(trimws(names(abundancia))) == "especie"
+)
+
+if (length(col_especie) != 1) {
+  stop(
+    "A coluna 'especie' não foi encontrada ou está duplicada."
+  )
+}
+
+# ------------------------------------------------------------
+# 3. Ler as assembleias selecionadas na presença/ausência
+# ------------------------------------------------------------
+
+selecionados_presenca <- read.csv2(
+  arquivo_selecionados_presenca,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+# Conferir se a coluna Parcela existe
+if (!"Parcela" %in% names(selecionados_presenca)) {
+  stop(
+    "A coluna 'Parcela' não foi encontrada no arquivo de inventários selecionados."
+  )
+}
+
+assembleias_presenca <- unique(
+  trimws(
+    as.character(
+      selecionados_presenca$Parcela
+    )
+  )
+)
+
+assembleias_presenca <- assembleias_presenca[
+  !is.na(assembleias_presenca) &
+    assembleias_presenca != ""
+]
+
+cat(
+  "\nAssembleias selecionadas na presença/ausência:",
+  length(assembleias_presenca),
+  "\n"
+)
+
+# ------------------------------------------------------------
+# 4. Identificar quais assembleias existem na abundância
+# ------------------------------------------------------------
+
+colunas_abundancia <- names(abundancia)[
+  seq_along(names(abundancia)) != col_especie
+]
+
+assembleias_comuns <- intersect(
+  assembleias_presenca,
+  colunas_abundancia
+)
+
+assembleias_presenca_sem_abundancia <- setdiff(
+  assembleias_presenca,
+  colunas_abundancia
+)
+
+assembleias_abundancia_nao_selecionadas <- setdiff(
+  colunas_abundancia,
+  assembleias_presenca
+)
+
+cat(
+  "Assembleias selecionadas disponíveis na abundância:",
+  length(assembleias_comuns),
+  "\n"
+)
+
+cat(
+  "Assembleias da presença sem coluna na abundância:",
+  length(assembleias_presenca_sem_abundancia),
+  "\n"
+)
+
+cat(
+  "Assembleias da abundância que não foram selecionadas na presença:",
+  length(assembleias_abundancia_nao_selecionadas),
+  "\n"
+)
+
+if (length(assembleias_comuns) == 0) {
+  stop(
+    "Nenhuma assembleia selecionada na presença foi encontrada na matriz de abundância."
+  )
+}
+
+# ------------------------------------------------------------
+# 5. Criar matriz de abundância com as assembleias em comum
+# ------------------------------------------------------------
+
+matriz_selecionada <- abundancia[
+  ,
+  c(col_especie, match(assembleias_comuns, names(abundancia))),
+  drop = FALSE
+]
+
+names(matriz_selecionada)[1] <- "especie"
+
+# ------------------------------------------------------------
+# 6. Converter abundâncias para números
+# ------------------------------------------------------------
+
+matriz_numerica <- matriz_selecionada[
+  ,
+  -1,
+  drop = FALSE
+]
+
+matriz_numerica[] <- lapply(
+  matriz_numerica,
+  function(x) {
+    suppressWarnings(
+      as.numeric(
+        gsub(
+          ",",
+          ".",
+          as.character(x),
+          fixed = TRUE
+        )
+      )
+    )
+  }
+)
+
+matriz_numerica[is.na(matriz_numerica)] <- 0
+
+# ------------------------------------------------------------
+# 7. Remover espécies sem abundância nas assembleias mantidas
+# ------------------------------------------------------------
+
+manter_especie <- rowSums(
+  matriz_numerica,
+  na.rm = TRUE
+) > 0
+
+especies_sem_abundancia <- matriz_selecionada[
+  !manter_especie,
+  ,
+  drop = FALSE
+]
+
+matriz_final_abundancia <- matriz_selecionada[
+  manter_especie,
+  ,
+  drop = FALSE
+]
+
+cat(
+  "\nEspécies antes da remoção das linhas vazias:",
+  nrow(matriz_selecionada),
+  "\n"
+)
+
+cat(
+  "Espécies sem abundância nas assembleias selecionadas:",
+  nrow(especies_sem_abundancia),
+  "\n"
+)
+
+cat(
+  "Número final de espécies:",
+  nrow(matriz_final_abundancia),
+  "\n"
+)
+
+cat(
+  "Número final de assembleias:",
+  ncol(matriz_final_abundancia) - 1,
+  "\n"
+)
+
+# ------------------------------------------------------------
+# 8. Salvar os resultados
+# ------------------------------------------------------------
+
+write.csv2(
+  matriz_final_abundancia,
+  file.path(
+    pasta_saida,
+    "matriz_abundancia_mesmas_assembleias_presenca.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+write.csv2(
+  data.frame(
+    Parcela = assembleias_comuns
+  ),
+  file.path(
+    pasta_saida,
+    "assembleias_comuns_presenca_abundancia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+write.csv2(
+  data.frame(
+    Parcela = assembleias_presenca_sem_abundancia
+  ),
+  file.path(
+    pasta_saida,
+    "assembleias_presenca_sem_dados_abundancia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+write.csv2(
+  data.frame(
+    Parcela = assembleias_abundancia_nao_selecionadas
+  ),
+  file.path(
+    pasta_saida,
+    "assembleias_abundancia_nao_selecionadas_presenca.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+write.csv2(
+  especies_sem_abundancia,
+  file.path(
+    pasta_saida,
+    "especies_sem_abundancia_apos_selecao.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+cat(
+  "\nResultados salvos em:\n",
+  pasta_saida,
+  "\n"
+)
