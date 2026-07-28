@@ -1,0 +1,518 @@
+# ============================================================
+# UNIR LINHAS QUE REPRESENTAM A MESMA ESPÉCIE
+# ============================================================
+
+# Instalar somente se necessário:
+# install.packages(c("dplyr", "readxl", "stringr", "openxlsx"))
+
+library(dplyr)
+library(readxl)
+library(stringr)
+library(openxlsx)
+
+# ------------------------------------------------------------
+# 1. Caminhos dos arquivos
+# ------------------------------------------------------------
+
+pasta_caapora <- "C:/Users/giuli/OneDrive/Documentos/Caapora"
+
+arquivo_matriz <- file.path(
+  pasta_caapora,
+  "filtragem_riqueza",
+  "matriz_filtrada_por_faixa_de_riqueza.csv"
+)
+
+arquivo_taxonomia <- file.path(
+  pasta_caapora,
+  "nomes_botanicos",
+  "especies_conferidas_reflora_taxon.xlsx"
+)
+
+pasta_resultados <- file.path(
+  pasta_caapora,
+  "resultados"
+)
+
+dir.create(
+  pasta_resultados,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+# ------------------------------------------------------------
+# 2. Ler a matriz
+# ------------------------------------------------------------
+
+matriz <- read.csv2(
+  arquivo_matriz,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+dim(matriz)
+
+cat(
+  "Espécies:", nrow(matriz), "\n",
+  "Inventários:", ncol(matriz) - 1, "\n"
+)
+
+# Guardar os nomes originais das colunas da matriz
+colunas_originais_matriz <- names(matriz)
+
+# A primeira coluna da matriz contém o nome usado na revisão
+names(matriz)[1] <- "taxonID_reflora"
+
+# Limpar a primeira coluna
+matriz$taxonID_reflora <- matriz$taxonID_reflora %>%
+  as.character() %>%
+  str_squish() %>%
+  str_to_lower()
+
+cat("\nPrimeiras espécies da matriz:\n")
+print(head(matriz$taxonID_reflora, 10))
+
+# ------------------------------------------------------------
+# 3. Ler a planilha de revisão taxonômica
+# ------------------------------------------------------------
+
+taxonomia <- read_excel(
+  arquivo_taxonomia,
+  sheet = 1
+)
+
+# Limpar os nomes das colunas
+names(taxonomia) <- names(taxonomia) %>%
+  trimws()
+
+cat("\nColunas encontradas na planilha taxonômica:\n")
+print(names(taxonomia))
+
+# A primeira coluna da planilha contém o nome original
+names(taxonomia)[1] <- "taxonID_reflora"
+
+# Verificar se a coluna com o nome aceito existe
+if (!"nome_aceito_reflora" %in% names(taxonomia)) {
+  stop(
+    paste0(
+      "\nA coluna 'nome_aceito_reflora' não foi encontrada.\n",
+      "Colunas existentes:\n",
+      paste(names(taxonomia), collapse = "\n")
+    )
+  )
+}
+
+# ------------------------------------------------------------
+# 4. Preparar a revisão taxonômica
+# ------------------------------------------------------------
+
+taxonomia <- taxonomia %>%
+  mutate(
+    taxonID_reflora = taxonID_reflora %>%
+      as.character() %>%
+      str_squish() %>%
+      str_to_lower(),
+    
+    nome_aceito_reflora = nome_aceito_reflora %>%
+      as.character() %>%
+      str_squish()
+  )
+
+# Retirar autoria: manter somente gênero + epíteto específico
+taxonomia <- taxonomia %>%
+  mutate(
+    nome_aceito_sem_autoria = case_when(
+      is.na(nome_aceito_reflora) ~ NA_character_,
+      nome_aceito_reflora == "" ~ NA_character_,
+      nome_aceito_reflora == "NA" ~ NA_character_,
+      TRUE ~ word(
+        nome_aceito_reflora,
+        start = 1,
+        end = 2
+      )
+    )
+  )
+
+# ------------------------------------------------------------
+# 5. Verificar nomes originais repetidos na revisão
+# ------------------------------------------------------------
+
+nomes_repetidos_taxonomia <- taxonomia %>%
+  filter(
+    !is.na(taxonID_reflora),
+    taxonID_reflora != ""
+  ) %>%
+  count(
+    taxonID_reflora,
+    name = "numero_de_registros"
+  ) %>%
+  filter(numero_de_registros > 1) %>%
+  arrange(desc(numero_de_registros))
+
+cat("\nNomes originais repetidos na revisão taxonômica:\n")
+print(nomes_repetidos_taxonomia)
+
+# Salvar para conferência
+write.xlsx(
+  nomes_repetidos_taxonomia,
+  file.path(
+    pasta_resultados,
+    "nomes_repetidos_na_revisao_taxonomica.xlsx"
+  ),
+  overwrite = TRUE
+)
+
+# ------------------------------------------------------------
+# 6. Manter uma correspondência por nome original
+# ------------------------------------------------------------
+
+taxonomia_unica <- taxonomia %>%
+  filter(
+    !is.na(taxonID_reflora),
+    taxonID_reflora != ""
+  ) %>%
+  arrange(
+    taxonID_reflora,
+    is.na(nome_aceito_sem_autoria)
+  ) %>%
+  distinct(
+    taxonID_reflora,
+    .keep_all = TRUE
+  ) %>%
+  select(
+    taxonID_reflora,
+    nome_aceito_reflora,
+    nome_aceito_sem_autoria
+  )
+
+cat("\nPrimeiras espécies da revisão taxonômica:\n")
+print(head(taxonomia_unica$taxonID_reflora, 10))
+
+# ------------------------------------------------------------
+# 7. Juntar matriz e revisão taxonômica
+# ------------------------------------------------------------
+
+matriz_revisada <- matriz %>%
+  left_join(
+    taxonomia_unica,
+    by = "taxonID_reflora"
+  )
+
+# ------------------------------------------------------------
+# 8. Verificar quais nomes não encontraram correspondência
+# ------------------------------------------------------------
+
+sem_correspondencia <- matriz_revisada %>%
+  filter(
+    is.na(nome_aceito_sem_autoria) |
+      nome_aceito_sem_autoria == ""
+  ) %>%
+  select(taxonID_reflora) %>%
+  distinct() %>%
+  arrange(taxonID_reflora)
+
+cat(
+  "\nNúmero de nomes sem correspondência:",
+  nrow(sem_correspondencia),
+  "\n"
+)
+
+print(sem_correspondencia)
+
+write.xlsx(
+  sem_correspondencia,
+  file.path(
+    pasta_resultados,
+    "nomes_sem_correspondencia_taxonomica.xlsx"
+  ),
+  overwrite = TRUE
+)
+
+# ------------------------------------------------------------
+# 9. Criar o nome usado para unir as linhas
+# ------------------------------------------------------------
+
+# Quando existe nome aceito, usa o nome aceito sem autoria.
+# Quando não existe correspondência, mantém o nome original.
+
+matriz_revisada <- matriz_revisada %>%
+  mutate(
+    especie_consolidada = case_when(
+      !is.na(nome_aceito_sem_autoria) &
+        nome_aceito_sem_autoria != "" ~ nome_aceito_sem_autoria,
+      
+      TRUE ~ taxonID_reflora
+    )
+  )
+
+# ------------------------------------------------------------
+# 10. Identificar as colunas dos inventários
+# ------------------------------------------------------------
+
+# Todas as colunas da matriz, exceto a primeira
+colunas_inventarios <- names(matriz)[-1]
+
+cat(
+  "\nNúmero de colunas de inventários:",
+  length(colunas_inventarios),
+  "\n"
+)
+
+# ------------------------------------------------------------
+# 11. Converter os dados da matriz para números
+# ------------------------------------------------------------
+
+matriz_revisada <- matriz_revisada %>%
+  mutate(
+    across(
+      all_of(colunas_inventarios),
+      ~ suppressWarnings(
+        as.numeric(
+          str_replace(
+            as.character(.x),
+            ",",
+            "."
+          )
+        )
+      )
+    )
+  )
+
+# ------------------------------------------------------------
+# 12. Verificar células que não puderam virar números
+# ------------------------------------------------------------
+
+problemas_numericos <- data.frame(
+  coluna = character(),
+  quantidade_de_NA = integer()
+)
+
+for (coluna in colunas_inventarios) {
+  
+  valores_originais <- matriz[[coluna]]
+  
+  valores_convertidos <- suppressWarnings(
+    as.numeric(
+      str_replace(
+        as.character(valores_originais),
+        ",",
+        "."
+      )
+    )
+  )
+  
+  novos_na <- sum(
+    is.na(valores_convertidos) &
+      !is.na(valores_originais) &
+      trimws(as.character(valores_originais)) != ""
+  )
+  
+  if (novos_na > 0) {
+    problemas_numericos <- rbind(
+      problemas_numericos,
+      data.frame(
+        coluna = coluna,
+        quantidade_de_NA = novos_na
+      )
+    )
+  }
+}
+
+cat("\nColunas com valores que não puderam ser convertidos:\n")
+print(problemas_numericos)
+
+write.xlsx(
+  problemas_numericos,
+  file.path(
+    pasta_resultados,
+    "problemas_na_conversao_numerica.xlsx"
+  ),
+  overwrite = TRUE
+)
+for (coluna in colunas_inventarios) {
+  
+  original <- as.character(matriz[[coluna]])
+  
+  convertido <- suppressWarnings(
+    as.numeric(
+      stringr::str_replace(original, ",", ".")
+    )
+  )
+  
+  problema <- !is.na(original) &
+    trimws(original) != "" &
+    is.na(convertido)
+  
+  if (any(problema)) {
+    
+    cat("\nColuna:", coluna, "\n")
+    
+    print(
+      data.frame(
+        linha = which(problema),
+        especie = matriz$taxonID_reflora[problema],
+        valor_problematico = original[problema]
+      )
+    )
+  }
+}
+
+# ------------------------------------------------------------
+# 13. Função para consolidar presença e ausência
+# ------------------------------------------------------------
+
+max_sem_erro <- function(x) {
+  
+  if (all(is.na(x))) {
+    return(NA_real_)
+  }
+  
+  max(x, na.rm = TRUE)
+}
+
+# ------------------------------------------------------------
+# 14. Unir as linhas da mesma espécie
+# ------------------------------------------------------------
+
+matriz_consolidada <- matriz_revisada %>%
+  select(
+    especie_consolidada,
+    all_of(colunas_inventarios)
+  ) %>%
+  group_by(especie_consolidada) %>%
+  summarise(
+    across(
+      all_of(colunas_inventarios),
+      max_sem_erro
+    ),
+    .groups = "drop"
+  ) %>%
+  rename(
+    especie = especie_consolidada
+  )
+
+# ------------------------------------------------------------
+# 15. Criar resumo das espécies que foram unidas
+# ------------------------------------------------------------
+
+resumo_agrupamento <- matriz_revisada %>%
+  group_by(especie_consolidada) %>%
+  summarise(
+    numero_de_linhas_unidas = n(),
+    nomes_originais = paste(
+      sort(unique(taxonID_reflora)),
+      collapse = " | "
+    ),
+    .groups = "drop"
+  ) %>%
+  arrange(
+    desc(numero_de_linhas_unidas),
+    especie_consolidada
+  )
+
+especies_realmente_unidas <- resumo_agrupamento %>%
+  filter(numero_de_linhas_unidas > 1)
+
+cat("\nEspécies que tiveram duas ou mais linhas unidas:\n")
+print(especies_realmente_unidas)
+
+# ------------------------------------------------------------
+# 16. Verificações finais
+# ------------------------------------------------------------
+
+cat(
+  "\n==========================================",
+  "\nRESUMO",
+  "\n==========================================",
+  "\nLinhas na matriz original:",
+  nrow(matriz),
+  "\nNomes distintos antes da consolidação:",
+  n_distinct(matriz$taxonID_reflora),
+  "\nEspécies distintas após a revisão:",
+  n_distinct(matriz_revisada$especie_consolidada),
+  "\nLinhas na matriz consolidada:",
+  nrow(matriz_consolidada),
+  "\nEspécies que tiveram linhas unidas:",
+  nrow(especies_realmente_unidas),
+  "\nAinda existem espécies repetidas:",
+  anyDuplicated(matriz_consolidada$especie) > 0,
+  "\n==========================================\n"
+)
+
+# ------------------------------------------------------------
+# 17. Salvar os arquivos
+# ------------------------------------------------------------
+
+write.csv2(
+  matriz_consolidada,
+  file.path(
+    pasta_resultados,
+    "matriz_especies_consolidadas.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+write.xlsx(
+  matriz_consolidada,
+  file.path(
+    pasta_resultados,
+    "matriz_especies_consolidadas.xlsx"
+  ),
+  overwrite = TRUE
+)
+
+write.xlsx(
+  matriz_revisada,
+  file.path(
+    pasta_resultados,
+    "matriz_com_revisao_antes_da_consolidacao.xlsx"
+  ),
+  overwrite = TRUE
+)
+
+write.xlsx(
+  resumo_agrupamento,
+  file.path(
+    pasta_resultados,
+    "resumo_todas_as_especies.xlsx"
+  ),
+  overwrite = TRUE
+)
+
+write.xlsx(
+  especies_realmente_unidas,
+  file.path(
+    pasta_resultados,
+    "especies_que_tiveram_linhas_unidas.xlsx"
+  ),
+  overwrite = TRUE
+)
+
+cat(
+  "\nArquivos salvos na pasta:\n",
+  pasta_resultados,
+  "\n"
+)
+matriz_consolidada$numero_inventarios <-
+  rowSums(
+    matriz_consolidada[, -1],
+    na.rm = TRUE
+  )
+matriz_consolidada <- matriz_consolidada %>%
+  arrange(desc(numero_inventarios))
+write.csv2(
+  matriz_consolidada,
+  file = file.path(
+    pasta_resultados,
+    "matriz_especies_consolidadas_com_frequencia.csv"
+  ),
+  row.names = FALSE
+)
+
+max(matriz_consolidada$numero_inventarios)
+min(matriz_consolidada$numero_inventarios)
+matriz_consolidada %>%
+  arrange(desc(numero_inventarios)) %>%
+  head(20)
