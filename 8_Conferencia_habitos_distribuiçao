@@ -1,0 +1,1446 @@
+# ============================================================
+# CONFERÊNCIA COMPLETA DE ESPÉCIES — REFLORA / DARWIN CORE
+#
+# Arquivos utilizados:
+# 1. Conferencia_habitos.xlsx
+# 2. taxon.txt
+# 3. speciesprofile.txt
+# 4. distribution.txt
+# 5. vernacularname.txt
+#
+# Resultado:
+# Conferencia_completa_REFLORA.xlsx
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 1. INSTALAR E CARREGAR OS PACOTES
+# ------------------------------------------------------------
+
+pacotes <- c(
+  "readxl",
+  "readr",
+  "dplyr",
+  "stringr",
+  "purrr",
+  "jsonlite",
+  "openxlsx",
+  "tibble"
+)
+
+pacotes_faltantes <- pacotes[
+  !pacotes %in% rownames(installed.packages())
+]
+
+if (length(pacotes_faltantes) > 0) {
+  install.packages(pacotes_faltantes)
+}
+
+library(readxl)
+library(readr)
+library(dplyr)
+library(stringr)
+library(purrr)
+library(jsonlite)
+library(openxlsx)
+library(tibble)
+
+
+# ------------------------------------------------------------
+# 2. DEFINIR A PASTA E OS ARQUIVOS
+# ------------------------------------------------------------
+
+# Altere somente este caminho, caso necessário.
+
+pasta <- "C:/Users/giuli/OneDrive/Documentos/Caapora/nomes_botanicos/dwca-lista_especies_flora_brasil-v393.428"
+
+
+arquivo_especies <- file.path(
+  pasta,
+  "informacoes_especies.xlsx"
+)
+
+arquivo_taxon <- file.path(
+  pasta,
+  "taxon.txt"
+)
+
+arquivo_speciesprofile <- file.path(
+  pasta,
+  "speciesprofile.txt"
+)
+
+arquivo_distribution <- file.path(
+  pasta,
+  "distribution.txt"
+)
+
+arquivo_vernacularname <- file.path(
+  pasta,
+  "vernacularname.txt"
+)
+
+arquivo_saida <- file.path(
+  pasta,
+  "Conferencia_completa_REFLORA.xlsx"
+)
+
+
+# ------------------------------------------------------------
+# 3. VERIFICAR SE OS ARQUIVOS EXISTEM
+# ------------------------------------------------------------
+
+arquivos_necessarios <- c(
+  arquivo_especies,
+  arquivo_taxon,
+  arquivo_speciesprofile,
+  arquivo_distribution,
+  arquivo_vernacularname
+)
+
+arquivos_ausentes <- arquivos_necessarios[
+  !file.exists(arquivos_necessarios)
+]
+
+if (length(arquivos_ausentes) > 0) {
+  
+  stop(
+    paste0(
+      "Os seguintes arquivos não foram encontrados:\n",
+      paste(arquivos_ausentes, collapse = "\n")
+    )
+  )
+}
+
+
+# ------------------------------------------------------------
+# 4. FUNÇÃO PARA NORMALIZAR NOMES BOTÂNICOS
+# ------------------------------------------------------------
+
+normalizar_nome <- function(nome) {
+  
+  nome %>%
+    as.character() %>%
+    str_replace_all("\u00A0", " ") %>%
+    str_squish() %>%
+    str_to_lower() %>%
+    str_replace_all("×", "x") %>%
+    str_replace_all("[[:punct:]]+$", "") %>%
+    str_squish()
+}
+
+
+# ------------------------------------------------------------
+# 5. FUNÇÃO PARA EXTRAIR CAMPOS JSON
+# ------------------------------------------------------------
+
+extrair_json <- function(texto_json, campo) {
+  
+  if (
+    is.na(texto_json) ||
+      texto_json == "" ||
+      str_trim(texto_json) == ""
+  ) {
+    return(NA_character_)
+  }
+  
+  resultado <- tryCatch(
+    
+    {
+      
+      objeto <- jsonlite::fromJSON(texto_json)
+      
+      valores <- objeto[[campo]]
+      
+      if (
+        is.null(valores) ||
+          length(valores) == 0
+      ) {
+        
+        NA_character_
+        
+      } else {
+        
+        valores <- as.character(valores)
+        
+        valores <- valores[
+          !is.na(valores) &
+            valores != ""
+        ]
+        
+        if (length(valores) == 0) {
+          
+          NA_character_
+          
+        } else {
+          
+          paste(
+            unique(valores),
+            collapse = "; "
+          )
+        }
+      }
+    },
+    
+    error = function(e) {
+      NA_character_
+    }
+  )
+  
+  return(resultado)
+}
+
+
+# ------------------------------------------------------------
+# 6. FUNÇÃO PARA JUNTAR VALORES ÚNICOS
+# ------------------------------------------------------------
+
+juntar_valores <- function(x) {
+  
+  x <- as.character(x)
+  
+  x <- x[
+    !is.na(x) &
+      x != "" &
+      str_trim(x) != ""
+  ]
+  
+  if (length(x) == 0) {
+    
+    return(NA_character_)
+    
+  } else {
+    
+    return(
+      paste(
+        sort(unique(x)),
+        collapse = "; "
+      )
+    )
+  }
+}
+
+
+# ------------------------------------------------------------
+# 7. IMPORTAR A PLANILHA COM AS ESPÉCIES
+# ------------------------------------------------------------
+
+especies <- read_excel(
+  arquivo_especies,
+  sheet = 1
+)
+
+cat(
+  "\nColunas encontradas na planilha de espécies:\n"
+)
+
+print(names(especies))
+
+
+# A coluna contendo o nome científico é VGN.
+# Altere abaixo caso o nome da coluna seja diferente.
+
+coluna_nome <- "especie"
+
+if (!coluna_nome %in% names(especies)) {
+  
+  stop(
+    paste0(
+      "A coluna '",
+      coluna_nome,
+      "' não foi encontrada na planilha."
+    )
+  )
+}
+
+
+especies <- especies %>%
+  mutate(
+    
+    ID_linha_original = row_number(),
+    
+    Nome_consultado =
+      as.character(.data[[coluna_nome]]),
+    
+    Nome_consultado_normalizado =
+      normalizar_nome(Nome_consultado)
+  )
+
+
+# ------------------------------------------------------------
+# 8. IMPORTAR O TAXON.TXT
+# ------------------------------------------------------------
+
+taxon <- read_tsv(
+  arquivo_taxon,
+  col_types = cols(.default = col_character()),
+  na = c("", "NA"),
+  progress = TRUE,
+  show_col_types = FALSE
+)
+
+cat(
+  "\nNúmero de registros em taxon.txt:",
+  nrow(taxon),
+  "\n"
+)
+
+
+# Verificar as colunas essenciais
+
+colunas_taxon <- c(
+  "id",
+  "scientificName",
+  "genus",
+  "specificEpithet",
+  "infraspecificEpithet",
+  "family",
+  "taxonomicStatus",
+  "acceptedNameUsageID",
+  "acceptedNameUsage",
+  "references"
+)
+
+colunas_taxon_ausentes <- setdiff(
+  colunas_taxon,
+  names(taxon)
+)
+
+if (length(colunas_taxon_ausentes) > 0) {
+  
+  stop(
+    paste0(
+      "As seguintes colunas não foram encontradas em taxon.txt:\n",
+      paste(colunas_taxon_ausentes, collapse = ", ")
+    )
+  )
+}
+
+
+# ------------------------------------------------------------
+# 9. CRIAR O NOME BOTÂNICO SEM AUTORIA
+# ------------------------------------------------------------
+
+taxon <- taxon %>%
+  mutate(
+    
+    Nome_REFLORA_sem_autoria = case_when(
+      
+      !is.na(genus) &
+        !is.na(specificEpithet) &
+        !is.na(infraspecificEpithet) ~
+        paste(
+          genus,
+          specificEpithet,
+          infraspecificEpithet
+        ),
+      
+      !is.na(genus) &
+        !is.na(specificEpithet) ~
+        paste(
+          genus,
+          specificEpithet
+        ),
+      
+      !is.na(genus) ~
+        genus,
+      
+      TRUE ~
+        scientificName
+    ),
+    
+    Nome_REFLORA_sem_autoria =
+      str_squish(Nome_REFLORA_sem_autoria),
+    
+    Nome_REFLORA_normalizado =
+      normalizar_nome(Nome_REFLORA_sem_autoria),
+    
+    ID_nome_aceito = case_when(
+      
+      !is.na(acceptedNameUsageID) &
+        acceptedNameUsageID != "" ~
+        acceptedNameUsageID,
+      
+      TRUE ~
+        id
+    ),
+    
+    Tipo_nome_REFLORA = case_when(
+      
+      taxonomicStatus == "SINONIMO" ~
+        "Sinônimo",
+      
+      taxonomicStatus == "NOME_ACEITO" ~
+        "Nome aceito",
+      
+      TRUE ~
+        taxonomicStatus
+    )
+  )
+
+
+# ------------------------------------------------------------
+# 10. CRIAR TABELA DOS NOMES ACEITOS
+# ------------------------------------------------------------
+
+nomes_aceitos <- taxon %>%
+  filter(
+    id == ID_nome_aceito |
+      taxonomicStatus == "NOME_ACEITO"
+  ) %>%
+  transmute(
+    
+    ID_nome_aceito = id,
+    
+    Nome_aceito_REFLORA =
+      Nome_REFLORA_sem_autoria,
+    
+    Nome_aceito_com_autoria =
+      scientificName,
+    
+    Familia_REFLORA =
+      family,
+    
+    Genero_REFLORA =
+      genus,
+    
+    Status_nome_aceito =
+      taxonomicStatus,
+    
+    Referencia_REFLORA =
+      references
+  ) %>%
+  distinct(
+    ID_nome_aceito,
+    .keep_all = TRUE
+  )
+
+
+# ------------------------------------------------------------
+# 11. IMPORTAR O SPECIESPROFILE.TXT
+# ------------------------------------------------------------
+
+speciesprofile <- read_tsv(
+  arquivo_speciesprofile,
+  col_types = cols(.default = col_character()),
+  na = c("", "NA"),
+  progress = TRUE,
+  show_col_types = FALSE
+)
+
+cat(
+  "\nNúmero de registros em speciesprofile.txt:",
+  nrow(speciesprofile),
+  "\n"
+)
+
+
+if (!"lifeForm" %in% names(speciesprofile)) {
+  
+  stop(
+    "A coluna lifeForm não foi encontrada em speciesprofile.txt."
+  )
+}
+
+
+# ------------------------------------------------------------
+# 12. EXTRAIR FORMA DE VIDA, HABITAT E VEGETAÇÃO
+# ------------------------------------------------------------
+
+speciesprofile_extraido <- speciesprofile %>%
+  mutate(
+    
+    JSON_speciesprofile = lifeForm,
+    
+    LifeForm_REFLORA = map_chr(
+      JSON_speciesprofile,
+      extrair_json,
+      campo = "lifeForm"
+    ),
+    
+    Habitat_REFLORA = map_chr(
+      JSON_speciesprofile,
+      extrair_json,
+      campo = "habitat"
+    ),
+    
+    Tipo_vegetacao_REFLORA = map_chr(
+      JSON_speciesprofile,
+      extrair_json,
+      campo = "vegetationType"
+    )
+  ) %>%
+  select(
+    id,
+    LifeForm_REFLORA,
+    Habitat_REFLORA,
+    Tipo_vegetacao_REFLORA,
+    JSON_speciesprofile
+  ) %>%
+  group_by(id) %>%
+  summarise(
+    
+    LifeForm_REFLORA =
+      juntar_valores(LifeForm_REFLORA),
+    
+    Habitat_REFLORA =
+      juntar_valores(Habitat_REFLORA),
+    
+    Tipo_vegetacao_REFLORA =
+      juntar_valores(Tipo_vegetacao_REFLORA),
+    
+    JSON_speciesprofile =
+      juntar_valores(JSON_speciesprofile),
+    
+    .groups = "drop"
+  )
+
+
+# ------------------------------------------------------------
+# 13. IMPORTAR O DISTRIBUTION.TXT
+# ------------------------------------------------------------
+
+distribution <- read_tsv(
+  arquivo_distribution,
+  col_types = cols(.default = col_character()),
+  na = c("", "NA"),
+  progress = TRUE,
+  show_col_types = FALSE
+)
+
+cat(
+  "\nNúmero de registros em distribution.txt:",
+  nrow(distribution),
+  "\n"
+)
+
+
+colunas_distribution <- c(
+  "id",
+  "locationID",
+  "countryCode",
+  "establishmentMeans",
+  "occurrenceRemarks"
+)
+
+colunas_distribution_ausentes <- setdiff(
+  colunas_distribution,
+  names(distribution)
+)
+
+if (length(colunas_distribution_ausentes) > 0) {
+  
+  stop(
+    paste0(
+      "As seguintes colunas não foram encontradas em distribution.txt:\n",
+      paste(
+        colunas_distribution_ausentes,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ------------------------------------------------------------
+# 14. EXTRAIR DISTRIBUIÇÃO, ENDEMISMO E DOMÍNIOS
+# ------------------------------------------------------------
+
+distribution_extraido <- distribution %>%
+  mutate(
+    
+    Estado_REFLORA = case_when(
+      
+      str_detect(
+        locationID,
+        "^BR-[A-Z]{2}$"
+      ) ~
+        str_remove(
+          locationID,
+          "^BR-"
+        ),
+      
+      TRUE ~
+        locationID
+    ),
+    
+    Endemismo_REFLORA = map_chr(
+      occurrenceRemarks,
+      extrair_json,
+      campo = "endemism"
+    ),
+    
+    Dominio_fitogeografico_REFLORA = map_chr(
+      occurrenceRemarks,
+      extrair_json,
+      campo = "phytogeographicDomain"
+    )
+  ) %>%
+  group_by(id) %>%
+  summarise(
+    
+    Estados_REFLORA =
+      juntar_valores(Estado_REFLORA),
+    
+    Paises_REFLORA =
+      juntar_valores(countryCode),
+    
+    Estabelecimento_REFLORA =
+      juntar_valores(establishmentMeans),
+    
+    Endemismo_REFLORA =
+      juntar_valores(Endemismo_REFLORA),
+    
+    Dominio_fitogeografico_REFLORA =
+      juntar_valores(
+        Dominio_fitogeografico_REFLORA
+      ),
+    
+    .groups = "drop"
+  )
+
+
+# ------------------------------------------------------------
+# 15. IMPORTAR O VERNACULARNAME.TXT
+# ------------------------------------------------------------
+
+vernacularname <- read_tsv(
+  arquivo_vernacularname,
+  col_types = cols(.default = col_character()),
+  na = c("", "NA"),
+  progress = TRUE,
+  show_col_types = FALSE
+)
+
+cat(
+  "\nNúmero de registros em vernacularname.txt:",
+  nrow(vernacularname),
+  "\n"
+)
+
+
+colunas_vernacular <- c(
+  "id",
+  "vernacularName",
+  "language",
+  "locality"
+)
+
+colunas_vernacular_ausentes <- setdiff(
+  colunas_vernacular,
+  names(vernacularname)
+)
+
+if (length(colunas_vernacular_ausentes) > 0) {
+  
+  stop(
+    paste0(
+      "As seguintes colunas não foram encontradas em vernacularname.txt:\n",
+      paste(
+        colunas_vernacular_ausentes,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ------------------------------------------------------------
+# 16. ORGANIZAR OS NOMES POPULARES
+# ------------------------------------------------------------
+
+vernacularname_extraido <- vernacularname %>%
+  group_by(id) %>%
+  summarise(
+    
+    Nomes_populares_REFLORA =
+      juntar_valores(vernacularName),
+    
+    Idiomas_nomes_populares_REFLORA =
+      juntar_valores(language),
+    
+    Localidades_nomes_populares_REFLORA =
+      juntar_valores(locality),
+    
+    .groups = "drop"
+  )
+
+
+# ------------------------------------------------------------
+# 17. CRIAR BASE GERAL DO REFLORA
+# ------------------------------------------------------------
+
+# Primeiro, as informações são procuradas pelo ID do nome aceito.
+
+base_reflora <- taxon %>%
+  select(
+    
+    ID_nome_encontrado = id,
+    
+    Nome_encontrado_REFLORA =
+      Nome_REFLORA_sem_autoria,
+    
+    Nome_encontrado_com_autoria =
+      scientificName,
+    
+    Nome_REFLORA_normalizado,
+    
+    Tipo_nome_REFLORA,
+    
+    Status_taxonomico_REFLORA =
+      taxonomicStatus,
+    
+    ID_nome_aceito,
+    
+    acceptedNameUsage
+  ) %>%
+  
+  left_join(
+    nomes_aceitos,
+    by = "ID_nome_aceito"
+  ) %>%
+  
+  left_join(
+    speciesprofile_extraido,
+    by = c(
+      "ID_nome_aceito" = "id"
+    )
+  ) %>%
+  
+  left_join(
+    distribution_extraido,
+    by = c(
+      "ID_nome_aceito" = "id"
+    )
+  ) %>%
+  
+  left_join(
+    vernacularname_extraido,
+    by = c(
+      "ID_nome_aceito" = "id"
+    )
+  )
+
+
+# ------------------------------------------------------------
+# 18. BUSCAR INFORMAÇÕES TAMBÉM NO ID DO NOME ORIGINAL
+# ------------------------------------------------------------
+
+# Isso funciona como alternativa de segurança para sinônimos
+# que eventualmente possuam informações no próprio ID.
+
+
+perfil_nome_original <- speciesprofile_extraido %>%
+  rename(
+    
+    ID_nome_encontrado = id,
+    
+    LifeForm_ID_original =
+      LifeForm_REFLORA,
+    
+    Habitat_ID_original =
+      Habitat_REFLORA,
+    
+    Tipo_vegetacao_ID_original =
+      Tipo_vegetacao_REFLORA,
+    
+    JSON_ID_original =
+      JSON_speciesprofile
+  )
+
+
+distribuicao_nome_original <- distribution_extraido %>%
+  rename(
+    
+    ID_nome_encontrado = id,
+    
+    Estados_ID_original =
+      Estados_REFLORA,
+    
+    Paises_ID_original =
+      Paises_REFLORA,
+    
+    Estabelecimento_ID_original =
+      Estabelecimento_REFLORA,
+    
+    Endemismo_ID_original =
+      Endemismo_REFLORA,
+    
+    Dominio_fitogeografico_ID_original =
+      Dominio_fitogeografico_REFLORA
+  )
+
+
+vernacular_nome_original <- vernacularname_extraido %>%
+  rename(
+    
+    ID_nome_encontrado = id,
+    
+    Nomes_populares_ID_original =
+      Nomes_populares_REFLORA,
+    
+    Idiomas_ID_original =
+      Idiomas_nomes_populares_REFLORA,
+    
+    Localidades_ID_original =
+      Localidades_nomes_populares_REFLORA
+  )
+
+
+base_reflora <- base_reflora %>%
+  
+  left_join(
+    perfil_nome_original,
+    by = "ID_nome_encontrado"
+  ) %>%
+  
+  left_join(
+    distribuicao_nome_original,
+    by = "ID_nome_encontrado"
+  ) %>%
+  
+  left_join(
+    vernacular_nome_original,
+    by = "ID_nome_encontrado"
+  ) %>%
+  
+  mutate(
+    
+    LifeForm_REFLORA = coalesce(
+      LifeForm_REFLORA,
+      LifeForm_ID_original
+    ),
+    
+    Habitat_REFLORA = coalesce(
+      Habitat_REFLORA,
+      Habitat_ID_original
+    ),
+    
+    Tipo_vegetacao_REFLORA = coalesce(
+      Tipo_vegetacao_REFLORA,
+      Tipo_vegetacao_ID_original
+    ),
+    
+    Estados_REFLORA = coalesce(
+      Estados_REFLORA,
+      Estados_ID_original
+    ),
+    
+    Paises_REFLORA = coalesce(
+      Paises_REFLORA,
+      Paises_ID_original
+    ),
+    
+    Estabelecimento_REFLORA = coalesce(
+      Estabelecimento_REFLORA,
+      Estabelecimento_ID_original
+    ),
+    
+    Endemismo_REFLORA = coalesce(
+      Endemismo_REFLORA,
+      Endemismo_ID_original
+    ),
+    
+    Dominio_fitogeografico_REFLORA = coalesce(
+      Dominio_fitogeografico_REFLORA,
+      Dominio_fitogeografico_ID_original
+    ),
+    
+    Nomes_populares_REFLORA = coalesce(
+      Nomes_populares_REFLORA,
+      Nomes_populares_ID_original
+    ),
+    
+    Idiomas_nomes_populares_REFLORA = coalesce(
+      Idiomas_nomes_populares_REFLORA,
+      Idiomas_ID_original
+    ),
+    
+    Localidades_nomes_populares_REFLORA = coalesce(
+      Localidades_nomes_populares_REFLORA,
+      Localidades_ID_original
+    )
+  ) %>%
+  
+  select(
+    -LifeForm_ID_original,
+    -Habitat_ID_original,
+    -Tipo_vegetacao_ID_original,
+    -JSON_ID_original,
+    -Estados_ID_original,
+    -Paises_ID_original,
+    -Estabelecimento_ID_original,
+    -Endemismo_ID_original,
+    -Dominio_fitogeografico_ID_original,
+    -Nomes_populares_ID_original,
+    -Idiomas_ID_original,
+    -Localidades_ID_original
+  )
+
+
+# ------------------------------------------------------------
+# 19. IDENTIFICAR A ORIGEM DAS INFORMAÇÕES
+# ------------------------------------------------------------
+
+base_reflora <- base_reflora %>%
+  mutate(
+    
+    Origem_dados_ecologicos = case_when(
+      
+      !is.na(LifeForm_REFLORA) |
+        !is.na(Habitat_REFLORA) |
+        !is.na(Tipo_vegetacao_REFLORA) ~
+        "speciesprofile.txt",
+      
+      TRUE ~
+        "Sem informação no speciesprofile.txt"
+    ),
+    
+    Origem_dados_distribuicao = case_when(
+      
+      !is.na(Estados_REFLORA) |
+        !is.na(Estabelecimento_REFLORA) |
+        !is.na(Endemismo_REFLORA) |
+        !is.na(Dominio_fitogeografico_REFLORA) ~
+        "distribution.txt",
+      
+      TRUE ~
+        "Sem informação no distribution.txt"
+    ),
+    
+    Origem_nomes_populares = case_when(
+      
+      !is.na(Nomes_populares_REFLORA) ~
+        "vernacularname.txt",
+      
+      TRUE ~
+        "Sem informação no vernacularname.txt"
+    )
+  )
+
+
+# ------------------------------------------------------------
+# 20. PRIORIZAR O MELHOR REGISTRO
+# ------------------------------------------------------------
+
+base_reflora <- base_reflora %>%
+  mutate(
+    
+    Quantidade_campos_preenchidos =
+      
+      as.integer(!is.na(LifeForm_REFLORA)) +
+      as.integer(!is.na(Habitat_REFLORA)) +
+      as.integer(!is.na(Tipo_vegetacao_REFLORA)) +
+      as.integer(!is.na(Estados_REFLORA)) +
+      as.integer(!is.na(Estabelecimento_REFLORA)) +
+      as.integer(!is.na(Endemismo_REFLORA)) +
+      as.integer(
+        !is.na(Dominio_fitogeografico_REFLORA)
+      ) +
+      as.integer(!is.na(Nomes_populares_REFLORA)),
+    
+    Prioridade_status = case_when(
+      
+      Tipo_nome_REFLORA == "Nome aceito" ~
+        1L,
+      
+      Tipo_nome_REFLORA == "Sinônimo" ~
+        2L,
+      
+      TRUE ~
+        3L
+    )
+  ) %>%
+  arrange(
+    Nome_REFLORA_normalizado,
+    desc(Quantidade_campos_preenchidos),
+    Prioridade_status
+  )
+
+
+# ------------------------------------------------------------
+# 21. CONTAR CORRESPONDÊNCIAS
+# ------------------------------------------------------------
+
+numero_correspondencias <- base_reflora %>%
+  count(
+    Nome_REFLORA_normalizado,
+    name = "Numero_correspondencias_REFLORA"
+  )
+
+
+base_reflora_principal <- base_reflora %>%
+  group_by(
+    Nome_REFLORA_normalizado
+  ) %>%
+  slice(1) %>%
+  ungroup() %>%
+  left_join(
+    numero_correspondencias,
+    by = "Nome_REFLORA_normalizado"
+  )
+
+
+# ------------------------------------------------------------
+# 22. CRUZAR COM A PLANILHA DE ESPÉCIES
+# ------------------------------------------------------------
+
+resultado <- especies %>%
+  left_join(
+    base_reflora_principal,
+    by = c(
+      "Nome_consultado_normalizado" =
+        "Nome_REFLORA_normalizado"
+    )
+  ) %>%
+  mutate(
+    
+    Correspondencia_REFLORA = case_when(
+      
+      is.na(ID_nome_encontrado) ~
+        "Não encontrado",
+      
+      Tipo_nome_REFLORA == "Nome aceito" ~
+        "Encontrado como nome aceito",
+      
+      Tipo_nome_REFLORA == "Sinônimo" ~
+        "Encontrado como sinônimo",
+      
+      TRUE ~
+        "Encontrado no REFLORA"
+    ),
+    
+    Possui_forma_de_vida = case_when(
+      !is.na(LifeForm_REFLORA) ~ "Sim",
+      TRUE ~ "Não"
+    ),
+    
+    Possui_habitat = case_when(
+      !is.na(Habitat_REFLORA) ~ "Sim",
+      TRUE ~ "Não"
+    ),
+    
+    Possui_tipo_vegetacao = case_when(
+      !is.na(Tipo_vegetacao_REFLORA) ~ "Sim",
+      TRUE ~ "Não"
+    ),
+    
+    Possui_distribuicao = case_when(
+      
+      !is.na(Estados_REFLORA) |
+        !is.na(Dominio_fitogeografico_REFLORA) ~
+        "Sim",
+      
+      TRUE ~
+        "Não"
+    ),
+    
+    Possui_endemismo = case_when(
+      !is.na(Endemismo_REFLORA) ~ "Sim",
+      TRUE ~ "Não"
+    ),
+    
+    Possui_nome_popular = case_when(
+      !is.na(Nomes_populares_REFLORA) ~ "Sim",
+      TRUE ~ "Não"
+    ),
+    
+    Precisa_revisao_manual = case_when(
+      
+      Correspondencia_REFLORA ==
+        "Não encontrado" ~
+        "Sim — nome não encontrado",
+      
+      Numero_correspondencias_REFLORA > 1 ~
+        "Sim — mais de uma correspondência",
+      
+      is.na(LifeForm_REFLORA) &
+        is.na(Habitat_REFLORA) &
+        is.na(Tipo_vegetacao_REFLORA) &
+        is.na(Estados_REFLORA) &
+        is.na(Endemismo_REFLORA) &
+        is.na(Dominio_fitogeografico_REFLORA) &
+        is.na(Nomes_populares_REFLORA) ~
+        "Sim — sem informações complementares",
+      
+      TRUE ~
+        "Não"
+    )
+  ) %>%
+  arrange(
+    ID_linha_original
+  )
+
+
+# ------------------------------------------------------------
+# 23. CRIAR TABELAS AUXILIARES
+# ------------------------------------------------------------
+
+nao_encontrados <- resultado %>%
+  filter(
+    Correspondencia_REFLORA ==
+      "Não encontrado"
+  )
+
+
+encontrados_como_sinonimo <- resultado %>%
+  filter(
+    Correspondencia_REFLORA ==
+      "Encontrado como sinônimo"
+  )
+
+
+sem_dados_ecologicos <- resultado %>%
+  filter(
+    !is.na(ID_nome_encontrado),
+    is.na(LifeForm_REFLORA),
+    is.na(Habitat_REFLORA),
+    is.na(Tipo_vegetacao_REFLORA)
+  )
+
+
+sem_dados_distribuicao <- resultado %>%
+  filter(
+    !is.na(ID_nome_encontrado),
+    is.na(Estados_REFLORA),
+    is.na(Estabelecimento_REFLORA),
+    is.na(Endemismo_REFLORA),
+    is.na(Dominio_fitogeografico_REFLORA)
+  )
+
+
+sem_nomes_populares <- resultado %>%
+  filter(
+    !is.na(ID_nome_encontrado),
+    is.na(Nomes_populares_REFLORA)
+  )
+
+
+multiplas_correspondencias <- resultado %>%
+  filter(
+    Numero_correspondencias_REFLORA > 1
+  )
+
+
+todas_correspondencias <- especies %>%
+  select(
+    ID_linha_original,
+    Nome_consultado,
+    Nome_consultado_normalizado
+  ) %>%
+  inner_join(
+    base_reflora,
+    by = c(
+      "Nome_consultado_normalizado" =
+        "Nome_REFLORA_normalizado"
+    ),
+    relationship = "many-to-many"
+  )
+
+
+# ------------------------------------------------------------
+# 24. CRIAR RESUMO
+# ------------------------------------------------------------
+
+total_registros <- nrow(resultado)
+
+
+resumo <- tibble(
+  
+  Indicador = c(
+    
+    "Total de registros na planilha",
+    
+    "Encontrados como nomes aceitos",
+    
+    "Encontrados como sinônimos",
+    
+    "Não encontrados no REFLORA",
+    
+    "Com forma de vida",
+    
+    "Com habitat",
+    
+    "Com tipo de vegetação",
+    
+    "Com estados de ocorrência",
+    
+    "Com informação de nativa ou cultivada",
+    
+    "Com informação de endemismo",
+    
+    "Com domínio fitogeográfico",
+    
+    "Com nomes populares",
+    
+    "Sem qualquer informação complementar",
+    
+    "Com mais de uma correspondência"
+  ),
+  
+  Quantidade = c(
+    
+    total_registros,
+    
+    sum(
+      resultado$Correspondencia_REFLORA ==
+        "Encontrado como nome aceito",
+      na.rm = TRUE
+    ),
+    
+    sum(
+      resultado$Correspondencia_REFLORA ==
+        "Encontrado como sinônimo",
+      na.rm = TRUE
+    ),
+    
+    sum(
+      resultado$Correspondencia_REFLORA ==
+        "Não encontrado",
+      na.rm = TRUE
+    ),
+    
+    sum(
+      !is.na(resultado$LifeForm_REFLORA)
+    ),
+    
+    sum(
+      !is.na(resultado$Habitat_REFLORA)
+    ),
+    
+    sum(
+      !is.na(resultado$Tipo_vegetacao_REFLORA)
+    ),
+    
+    sum(
+      !is.na(resultado$Estados_REFLORA)
+    ),
+    
+    sum(
+      !is.na(resultado$Estabelecimento_REFLORA)
+    ),
+    
+    sum(
+      !is.na(resultado$Endemismo_REFLORA)
+    ),
+    
+    sum(
+      !is.na(
+        resultado$Dominio_fitogeografico_REFLORA
+      )
+    ),
+    
+    sum(
+      !is.na(resultado$Nomes_populares_REFLORA)
+    ),
+    
+    sum(
+      is.na(resultado$LifeForm_REFLORA) &
+        is.na(resultado$Habitat_REFLORA) &
+        is.na(resultado$Tipo_vegetacao_REFLORA) &
+        is.na(resultado$Estados_REFLORA) &
+        is.na(resultado$Estabelecimento_REFLORA) &
+        is.na(resultado$Endemismo_REFLORA) &
+        is.na(
+          resultado$Dominio_fitogeografico_REFLORA
+        ) &
+        is.na(resultado$Nomes_populares_REFLORA)
+    ),
+    
+    sum(
+      resultado$Numero_correspondencias_REFLORA > 1,
+      na.rm = TRUE
+    )
+  )
+) %>%
+  mutate(
+    
+    Percentual = case_when(
+      
+      Indicador ==
+        "Total de registros na planilha" ~
+        100,
+      
+      total_registros > 0 ~
+        round(
+          Quantidade /
+            total_registros *
+            100,
+          2
+        ),
+      
+      TRUE ~
+        NA_real_
+    )
+  )
+
+
+# ------------------------------------------------------------
+# 25. FUNÇÃO PARA ESCREVER AS ABAS DO EXCEL
+# ------------------------------------------------------------
+
+adicionar_aba <- function(
+    workbook,
+  nome_aba,
+  dados,
+  estilo = "TableStyleMedium2"
+) {
+  
+  addWorksheet(
+    workbook,
+    nome_aba
+  )
+  
+  if (nrow(dados) > 0) {
+    
+    writeDataTable(
+      workbook,
+      nome_aba,
+      dados,
+      tableStyle = estilo
+    )
+    
+  } else {
+    
+    writeData(
+      workbook,
+      nome_aba,
+      "Nenhum registro encontrado."
+    )
+  }
+  
+  freezePane(
+    workbook,
+    nome_aba,
+    firstRow = TRUE
+  )
+  
+  if (ncol(dados) > 0) {
+    
+    setColWidths(
+      workbook,
+      nome_aba,
+      cols = 1:ncol(dados),
+      widths = "auto"
+    )
+  }
+}
+
+
+# ------------------------------------------------------------
+# 26. EXPORTAR PARA EXCEL
+# ------------------------------------------------------------
+
+wb <- createWorkbook()
+
+
+adicionar_aba(
+  wb,
+  "Resultado_completo",
+  resultado,
+  "TableStyleMedium2"
+)
+
+
+adicionar_aba(
+  wb,
+  "Resumo",
+  resumo,
+  "TableStyleMedium4"
+)
+
+
+adicionar_aba(
+  wb,
+  "Encontrados_sinonimos",
+  encontrados_como_sinonimo,
+  "TableStyleMedium3"
+)
+
+
+adicionar_aba(
+  wb,
+  "Nao_encontrados",
+  nao_encontrados,
+  "TableStyleMedium6"
+)
+
+
+adicionar_aba(
+  wb,
+  "Sem_dados_ecologicos",
+  sem_dados_ecologicos,
+  "TableStyleMedium5"
+)
+
+
+adicionar_aba(
+  wb,
+  "Sem_distribuicao",
+  sem_dados_distribuicao,
+  "TableStyleMedium7"
+)
+
+
+adicionar_aba(
+  wb,
+  "Sem_nomes_populares",
+  sem_nomes_populares,
+  "TableStyleMedium8"
+)
+
+
+adicionar_aba(
+  wb,
+  "Multiplas_correspondencias",
+  multiplas_correspondencias,
+  "TableStyleMedium9"
+)
+
+
+adicionar_aba(
+  wb,
+  "Todas_correspondencias",
+  todas_correspondencias,
+  "TableStyleMedium10"
+)
+
+
+saveWorkbook(
+  wb,
+  arquivo_saida,
+  overwrite = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 27. MOSTRAR O RESULTADO NO CONSOLE
+# ------------------------------------------------------------
+
+cat(
+  "\n==============================================\n"
+)
+
+cat(
+  "CONFERÊNCIA FINALIZADA\n"
+)
+
+cat(
+  "==============================================\n"
+)
+
+cat(
+  "\nArquivo criado em:\n",
+  arquivo_saida,
+  "\n"
+)
+
+cat(
+  "\nResumo:\n"
+)
+
+print(resumo)
+
+cat(
+  "\nProcessamento concluído com sucesso.\n"
+)
