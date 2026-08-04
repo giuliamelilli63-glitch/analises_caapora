@@ -1,10 +1,10 @@
-# Ler a planilha
+# Ler a matriz
 dados <- read.csv2(
-  "inventario_completo_sem_inventarios_excluidos.csv",
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_abundancia/Matriz_original_abundancia_brasil.csv",
   header = TRUE,
   stringsAsFactors = FALSE,
   check.names = FALSE,
-  fileEncoding = "UTF-8"
+  fileEncoding = "latin1"
 )
 
 # Padronizar temporariamente os nomes das colunas
@@ -19,7 +19,7 @@ nomes_colunas <- tolower(
   )
 )
 
-# Localizar as colunas
+# Localizar as colunas especie e identificacao
 col_especie <- which(nomes_colunas == "especie")
 col_identificacao <- which(nomes_colunas == "identificacao")
 
@@ -32,8 +32,9 @@ if (length(col_identificacao) != 1) {
   stop("A coluna 'identificacao' não foi encontrada ou está duplicada.")
 }
 
-# Padronizar temporariamente os valores da coluna especie
-especie <- tolower(
+# Padronizar temporariamente os nomes das espécies
+# A coluna original não será alterada
+especie_padronizada <- tolower(
   trimws(
     iconv(
       as.character(dados[[col_especie]]),
@@ -44,80 +45,51 @@ especie <- tolower(
   )
 )
 
-# Padronizar temporariamente os valores da coluna identificacao
-identificacao <- tolower(
-  trimws(
-    iconv(
-      as.character(dados[[col_identificacao]]),
-      from = "",
-      to = "ASCII//TRANSLIT",
-      sub = ""
-    )
-  )
-)
-
-# Identificar espécies sem identificação completa
+# Identificar registros com identificação incompleta
 #
-# Remove exemplos como:
-# Inga_indet
-# Inga_sp
-# Inga_ssp
-# Piper_indet
+# Exemplos classificados como incompletos:
+# inga_indet
+# inga_sp
+# inga_ssp
 # indet
 # indet_indet
 # indet_sp
 # indet_t_
 # indet_tt_
 
-excluir_especie <-
-  grepl("_(indet|sp|ssp)_*$", especie) |
-  grepl("^indet($|_)", especie)
+identificacao_incompleta <-
+  grepl("_(indet|sp|ssp)_*$", especie_padronizada) |
+  grepl("^indet($|_)", especie_padronizada)
 
-# Identificar registros marcados como identificação incompleta
-excluir_identificacao <- identificacao == "incompleta"
-
-# Juntar os dois critérios
-excluir <- excluir_especie | excluir_identificacao
-
-# Criar a planilha limpa
-dados_limpos <- dados[
-  !excluir,
-  ,
-  drop = FALSE
-]
-
-# Salvar a planilha limpa
-write.csv2(
-  dados_limpos,
-  "inventario_completo_sem_indeterminadas.csv",
-  row.names = FALSE,
-  fileEncoding = "UTF-8"
+# Preencher a coluna identificacao
+dados[[col_identificacao]] <- ifelse(
+  identificacao_incompleta,
+  "incompleta",
+  "completa"
 )
+
+# Salvar a matriz completa, sem excluir nenhuma espécie
+write.csv2(
+  dados,
+  "Matriz_original_ocorrencia_brasil_identificacao.csv",
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
 
 # Mostrar resumo
-cat("Total de espécies antes da limpeza:", nrow(dados), "\n")
+cat("Total de registros na matriz:", nrow(dados), "\n")
 cat(
-  "Removidas pelo nome na coluna especie:",
-  sum(excluir_especie, na.rm = TRUE),
+  "Registros com identificação completa:",
+  sum(!identificacao_incompleta, na.rm = TRUE),
   "\n"
 )
 cat(
-  "Marcadas como identificacao incompleta:",
-  sum(excluir_identificacao, na.rm = TRUE),
+  "Registros com identificação incompleta:",
+  sum(identificacao_incompleta, na.rm = TRUE),
   "\n"
 )
-cat(
-  "Total de linhas removidas:",
-  sum(excluir, na.rm = TRUE),
-  "\n"
-)
-cat("Total de espécies mantidas:", nrow(dados_limpos), "\n")
+cat("Nenhuma linha foi excluída.\n")
 
-excluidas <- dados[excluir, ]
-
-View(excluidas)
-write.csv2(
-  excluidas,
-  "especies_excluidas.csv",
-  row.names = FALSE,
-  fileEncoding = "UTF-8"
+# Visualizar os registros classificados como incompletos
+View(registros_incompletos)
