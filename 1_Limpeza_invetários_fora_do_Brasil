@@ -1,6 +1,6 @@
-# Ler a matriz
+# Ler a matriz de ocorrência
 dados <- read.csv2(
-  "inventario_completo.csv",
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_ocorrência/Matriz_original_ocorrencia.csv",
   header = TRUE,
   stringsAsFactors = FALSE,
   check.names = FALSE,
@@ -395,54 +395,68 @@ t4849
   quiet = TRUE
 )
 
-# Remover possíveis códigos repetidos
+# Remover códigos repetidos
 inventarios_excluir <- unique(inventarios_excluir)
 
-# Verificar quais inventários realmente existem na planilha
+# As quatro primeiras colunas são informações taxonômicas
+colunas_informacao <- colnames(dados)[1:4]
+
+# Os inventários começam na quinta coluna
+colunas_inventarios <- colnames(dados)[5:ncol(dados)]
+
+# Verificar os inventários encontrados
 inventarios_encontrados <- intersect(
   inventarios_excluir,
-  colnames(dados)
+  colunas_inventarios
 )
 
 inventarios_nao_encontrados <- setdiff(
   inventarios_excluir,
-  colnames(dados)
+  colunas_inventarios
 )
 
-# Mostrar inventários não encontrados
+# Mostrar os inventários não encontrados
 if (length(inventarios_nao_encontrados) > 0) {
   cat(
-    "Inventários não encontrados na planilha:\n",
+    "Inventários não encontrados na matriz:\n",
     paste(inventarios_nao_encontrados, collapse = ", "),
     "\n\n"
   )
 }
 
-# Excluir as colunas dos inventários informados
+# Excluir somente as colunas dos inventários indicados
 dados_filtrados <- dados[
   ,
   !colnames(dados) %in% inventarios_encontrados,
   drop = FALSE
 ]
 
-# Considera que a primeira coluna contém os nomes das espécies
-# e todas as demais colunas são inventários
-matriz_restante <- dados_filtrados[, -1, drop = FALSE]
-
-# Converter os valores das ocorrências para números
-matriz_restante <- as.data.frame(
-  lapply(matriz_restante, function(x) {
-    x <- gsub(",", ".", as.character(x), fixed = TRUE)
-    as.numeric(x)
-  }),
-  check.names = FALSE
+# Selecionar somente as colunas dos inventários restantes
+colunas_inventarios_restantes <- setdiff(
+  colunas_inventarios,
+  inventarios_encontrados
 )
 
-# Substituir valores vazios por zero
-matriz_restante[is.na(matriz_restante)] <- 0
+matriz_ocorrencia_restante <- dados_filtrados[
+  ,
+  colunas_inventarios_restantes,
+  drop = FALSE
+]
 
-# Manter espécies que aparecem em pelo menos um inventário restante
-manter_especie <- rowSums(matriz_restante > 0) > 0
+# Converter os valores dos inventários para números
+matriz_ocorrencia_restante[] <- lapply(
+  matriz_ocorrencia_restante,
+  function(x) {
+    x <- gsub(",", ".", as.character(x), fixed = TRUE)
+    as.numeric(x)
+  }
+)
+
+# Substituir valores vazios ou inválidos por zero
+matriz_ocorrencia_restante[is.na(matriz_ocorrencia_restante)] <- 0
+
+# Manter espécies presentes em pelo menos um inventário restante
+manter_especie <- rowSums(matriz_ocorrencia_restante > 0) > 0
 
 resultado <- dados_filtrados[
   manter_especie,
@@ -450,16 +464,22 @@ resultado <- dados_filtrados[
   drop = FALSE
 ]
 
-# Salvar a nova matriz
+# Salvar a matriz de ocorrência filtrada
 write.csv2(
   resultado,
-  "inventario_completo_sem_inventarios_excluidos.csv",
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_ocorrência/Matriz_original_ocorrencia_brasil.csv",
   row.names = FALSE,
-  fileEncoding = "UTF-8"
+  fileEncoding = "latin1"
 )
 
 # Resumo
-cat("Inventários excluídos:", length(inventarios_encontrados), "\n")
+cat("Inventários antes da exclusão:", length(colunas_inventarios), "\n")
+cat("Inventários solicitados para exclusão:", length(inventarios_excluir), "\n")
+cat("Inventários encontrados e excluídos:", length(inventarios_encontrados), "\n")
+cat("Inventários não encontrados:", length(inventarios_nao_encontrados), "\n")
+cat("Inventários restantes:", length(colunas_inventarios_restantes), "\n\n")
+
 cat("Espécies antes da exclusão:", nrow(dados), "\n")
 cat("Espécies mantidas:", nrow(resultado), "\n")
-cat("Espécies eliminadas:", nrow(dados) - nrow(resultado), "\n")
+cat("Espécies eliminadas por ficarem sem ocorrência:",
+  nrow(dados) - nrow(resultado), "\n")
