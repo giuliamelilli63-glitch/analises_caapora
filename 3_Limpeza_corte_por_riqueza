@@ -1,3 +1,4 @@
+
 # ============================================================
 # 1. CARREGAR PACOTE
 # ============================================================
@@ -9,18 +10,15 @@ library(readxl)
 # ============================================================
 
 arquivo_inventario <- paste0(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
-  "filtragem_riqueza/inventario_completo_sem_indeterminadas.csv"
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_ocorrência/Matriz_original_ocorrencia_brasil_identificacao.csv"
 )
 
 arquivo_metadados <- paste0(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
-  "filtragem_riqueza/caapora.xlsx"
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matriz_refencia/caapora_base_referencias.xlsx"
 )
 
 pasta_saida <- paste0(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
-  "filtragem_riqueza"
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_ocorrência"
 )
 
 # ============================================================
@@ -144,7 +142,7 @@ if (length(inventarios_sem_area) > 0) {
 
 parcelas_1ha <- which(
   !is.na(areas) &
-  abs(areas - 1) < 0.0001
+    abs(areas - 1) < 0.0001
 )
 
 cat(
@@ -313,14 +311,14 @@ resultado_todos <- resultado_todos[
 
 inventarios_selecionados <- resultado_todos[
   resultado_todos$Riqueza >= media_10_menores &
-  resultado_todos$Riqueza <= media_10_maiores,
+    resultado_todos$Riqueza <= media_10_maiores,
   ,
   drop = FALSE
 ]
 
 inventarios_excluidos <- resultado_todos[
   resultado_todos$Riqueza < media_10_menores |
-  resultado_todos$Riqueza > media_10_maiores,
+    resultado_todos$Riqueza > media_10_maiores,
   ,
   drop = FALSE
 ]
@@ -375,12 +373,10 @@ if (any(is.na(posicoes_selecionadas))) {
 # Manter a coluna especie e os inventários selecionados
 matriz_selecionada <- dados[
   ,
-  c(col_especie, posicoes_selecionadas),
+  c(1:4, posicoes_selecionadas),
   drop = FALSE
 ]
 
-# Garantir que a primeira coluna tenha o nome especie
-names(matriz_selecionada)[1] <- "especie"
 
 # ============================================================
 # 15. REMOVER ESPÉCIES SEM OCORRÊNCIA APÓS O FILTRO
@@ -388,7 +384,7 @@ names(matriz_selecionada)[1] <- "especie"
 
 matriz_ocorrencias <- matriz_selecionada[
   ,
-  -1,
+  5:ncol(matriz_selecionada),
   drop = FALSE
 ]
 
@@ -538,10 +534,10 @@ write.csv2(
   matriz_final,
   file.path(
     pasta_saida,
-    "matriz_filtrada_por_faixa_de_riqueza.csv"
+    "Matriz_original_ocorrencia_brasil_identificacao_recorte1ha.csv"
   ),
   row.names = FALSE,
-  fileEncoding = "UTF-8"
+  fileEncoding = "latin1"
 )
 
 cat(
