@@ -1,3 +1,8 @@
+# ============================================================
+# FILTRAGEM DOS INVENTÁRIOS DE OCORRÊNCIA
+# RIQUEZA CALCULADA SOMENTE COM IDENTIFICAÇÕES COMPLETAS
+# ============================================================
+
 
 # ============================================================
 # 1. CARREGAR PACOTE
@@ -5,21 +10,34 @@
 
 library(readxl)
 
+
 # ============================================================
 # 2. DEFINIR CAMINHOS
 # ============================================================
 
 arquivo_inventario <- paste0(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_ocorrência/Matriz_original_ocorrencia_brasil_identificacao.csv"
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matrizes_ocorrência/",
+  "Matriz_original_ocorrencia_brasil_identificacao.csv"
 )
 
 arquivo_metadados <- paste0(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matriz_refencia/caapora_base_referencias.xlsx"
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matriz_refencia/",
+  "caapora_base_referencias.xlsx"
 )
 
 pasta_saida <- paste0(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_ocorrência"
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matrizes_ocorrência/"
 )
+
+dir.create(
+  pasta_saida,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
 
 # ============================================================
 # 3. LER OS ARQUIVOS
@@ -42,39 +60,169 @@ caapora <- as.data.frame(
   check.names = FALSE
 )
 
+
 # ============================================================
-# 4. PADRONIZAR NOMES
+# 4. PADRONIZAR OS NOMES DAS COLUNAS
 # ============================================================
 
 names(dados) <- trimws(names(dados))
+
+names(caapora) <- trimws(names(caapora))
 
 caapora$ponto <- trimws(
   as.character(caapora$ponto)
 )
 
-# Localizar a coluna especie pelo nome
+
+# ============================================================
+# 5. LOCALIZAR A COLUNA DE ESPÉCIE
+# ============================================================
+
 col_especie <- which(
   tolower(trimws(names(dados))) == "especie"
 )
 
 if (length(col_especie) != 1) {
   stop(
-    "A coluna 'especie' não foi encontrada ou está duplicada."
+    paste0(
+      "A coluna 'especie' não foi encontrada ",
+      "ou está duplicada."
+    )
   )
 }
 
 cat(
-  "Coluna de espécies encontrada:",
+  "\nColuna de espécies encontrada:",
   names(dados)[col_especie],
   "\n"
 )
 
+
 # ============================================================
-# 5. IDENTIFICAR SOMENTE AS COLUNAS DOS INVENTÁRIOS
+# 6. LOCALIZAR A COLUNA DE CLASSIFICAÇÃO
 # ============================================================
 
-# As colunas de inventários são aquelas cujos nomes aparecem
-# na coluna ponto da tabela caapora
+# O script procura uma coluna que contenha os valores
+# "completa" e "incompleta".
+
+col_classificacao <- which(
+  sapply(
+    dados,
+    function(x) {
+      valores <- tolower(
+        trimws(
+          as.character(x)
+        )
+      )
+      
+      any(
+        valores %in% c(
+          "completa",
+          "completo",
+          "incompleta",
+          "incompleto"
+        ),
+        na.rm = TRUE
+      )
+    }
+  )
+)
+
+if (length(col_classificacao) == 0) {
+  stop(
+    paste0(
+      "Não foi encontrada uma coluna com as classificações ",
+      "'completa' e 'incompleta'."
+    )
+  )
+}
+
+if (length(col_classificacao) > 1) {
+  stop(
+    paste0(
+      "Mais de uma coluna contém as classificações ",
+      "'completa' e 'incompleta': ",
+      paste(
+        names(dados)[col_classificacao],
+        collapse = ", "
+      ),
+      ". Defina manualmente a coluna correta."
+    )
+  )
+}
+
+nome_col_classificacao <- names(dados)[col_classificacao]
+
+cat(
+  "Coluna de classificação encontrada:",
+  nome_col_classificacao,
+  "\n"
+)
+
+
+# ============================================================
+# 7. PADRONIZAR A CLASSIFICAÇÃO
+# ============================================================
+
+classificacao <- tolower(
+  trimws(
+    as.character(
+      dados[[col_classificacao]]
+    )
+  )
+)
+
+# Considerar como completa tanto "completa" quanto "completo"
+identificacao_completa <- classificacao %in% c(
+  "completa",
+  "completo"
+)
+
+cat(
+  "\nNúmero de linhas com identificação completa:",
+  sum(identificacao_completa, na.rm = TRUE),
+  "\n"
+)
+
+cat(
+  "Número de linhas com identificação incompleta:",
+  sum(
+    classificacao %in% c(
+      "incompleta",
+      "incompleto"
+    ),
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+cat(
+  "Número de linhas com outra classificação ou sem informação:",
+  sum(
+    !identificacao_completa &
+      !classificacao %in% c(
+        "incompleta",
+        "incompleto"
+      ),
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+if (sum(identificacao_completa, na.rm = TRUE) == 0) {
+  stop(
+    "Nenhuma espécie foi classificada como identificação completa."
+  )
+}
+
+
+# ============================================================
+# 8. IDENTIFICAR AS COLUNAS DOS INVENTÁRIOS
+# ============================================================
+
+# São consideradas colunas de inventários aquelas cujos
+# nomes aparecem na coluna ponto da planilha de metadados.
+
 colunas_inventarios <- which(
   names(dados) %in% caapora$ponto
 )
@@ -88,13 +236,14 @@ if (length(colunas_inventarios) == 0) {
 nomes_inventarios <- names(dados)[colunas_inventarios]
 
 cat(
-  "Número de inventários encontrados na matriz:",
+  "\nNúmero de inventários encontrados na matriz:",
   length(nomes_inventarios),
   "\n"
 )
 
+
 # ============================================================
-# 6. CONVERTER ÁREA AMOSTRADA PARA NÚMERO
+# 9. CONVERTER A ÁREA AMOSTRADA PARA NÚMERO
 # ============================================================
 
 caapora$`area-amostrada-ha` <- suppressWarnings(
@@ -102,14 +251,17 @@ caapora$`area-amostrada-ha` <- suppressWarnings(
     gsub(
       ",",
       ".",
-      as.character(caapora$`area-amostrada-ha`),
+      as.character(
+        caapora$`area-amostrada-ha`
+      ),
       fixed = TRUE
     )
   )
 )
 
+
 # ============================================================
-# 7. ASSOCIAR ÁREA A CADA INVENTÁRIO
+# 10. ASSOCIAR A ÁREA A CADA INVENTÁRIO
 # ============================================================
 
 areas <- caapora$`area-amostrada-ha`[
@@ -119,8 +271,13 @@ areas <- caapora$`area-amostrada-ha`[
   )
 ]
 
-cat("\nÁreas encontradas:\n")
-print(sort(unique(areas)))
+cat("\nÁreas encontradas nos metadados:\n")
+
+print(
+  sort(
+    unique(areas)
+  )
+)
 
 inventarios_sem_area <- nomes_inventarios[
   is.na(areas)
@@ -136,8 +293,9 @@ if (length(inventarios_sem_area) > 0) {
   print(inventarios_sem_area)
 }
 
+
 # ============================================================
-# 8. SELECIONAR PARCELAS DE 1 HECTARE
+# 11. SELECIONAR AS PARCELAS DE 1 HECTARE
 # ============================================================
 
 parcelas_1ha <- which(
@@ -152,32 +310,35 @@ cat(
 )
 
 if (length(parcelas_1ha) == 0) {
-  stop("Nenhuma parcela de 1 ha foi encontrada.")
+  stop(
+    "Nenhuma parcela de 1 ha foi encontrada."
+  )
 }
 
 if (length(parcelas_1ha) < 10) {
-  stop("Existem menos de 10 parcelas de 1 ha.")
+  stop(
+    "Existem menos de 10 parcelas de 1 ha."
+  )
 }
 
 nomes_parcelas_1ha <- nomes_inventarios[
   parcelas_1ha
 ]
 
-cat("\nParcelas de 1 ha:\n")
-print(nomes_parcelas_1ha)
 
 # ============================================================
-# 9. EXTRAIR E CONVERTER OS DADOS DAS PARCELAS DE 1 HA
+# 12. EXTRAIR AS PARCELAS DE 1 HA
+#     SOMENTE PARA AS IDENTIFICAÇÕES COMPLETAS
 # ============================================================
 
-dados_1ha <- dados[
-  ,
+dados_1ha_completas <- dados[
+  identificacao_completa,
   nomes_parcelas_1ha,
   drop = FALSE
 ]
 
-dados_1ha[] <- lapply(
-  dados_1ha,
+dados_1ha_completas[] <- lapply(
+  dados_1ha_completas,
   function(x) {
     suppressWarnings(
       as.numeric(
@@ -192,34 +353,48 @@ dados_1ha[] <- lapply(
   }
 )
 
-dados_1ha[is.na(dados_1ha)] <- 0
+dados_1ha_completas[
+  is.na(dados_1ha_completas)
+] <- 0
+
 
 # ============================================================
-# 10. CALCULAR RIQUEZA DAS PARCELAS DE 1 HA
+# 13. CALCULAR A RIQUEZA DAS PARCELAS DE 1 HA
+#     SOMENTE COM IDENTIFICAÇÕES COMPLETAS
 # ============================================================
 
 riqueza_1ha <- colSums(
-  dados_1ha > 0,
+  dados_1ha_completas > 0,
   na.rm = TRUE
 )
 
 resultado_1ha <- data.frame(
-  Parcela = names(riqueza_1ha),
-  Riqueza = as.numeric(riqueza_1ha),
+  Inventario = names(riqueza_1ha),
+  Riqueza_identificacao_completa = as.numeric(
+    riqueza_1ha
+  ),
   stringsAsFactors = FALSE
 )
 
 resultado_1ha <- resultado_1ha[
-  order(resultado_1ha$Riqueza),
+  order(
+    resultado_1ha$Riqueza_identificacao_completa
+  ),
   ,
   drop = FALSE
 ]
 
-cat("\nRiqueza das parcelas de 1 ha:\n")
+cat(
+  "\nRiqueza das parcelas de 1 ha, ",
+  "considerando somente identificações completas:\n",
+  sep = ""
+)
+
 print(resultado_1ha)
 
+
 # ============================================================
-# 11. CALCULAR A MÉDIA DAS 10 MENORES E 10 MAIORES
+# 14. SELECIONAR AS 10 MENORES E AS 10 MAIORES RIQUEZAS
 # ============================================================
 
 dez_menores <- head(
@@ -233,25 +408,25 @@ dez_maiores <- tail(
 )
 
 media_10_menores <- mean(
-  dez_menores$Riqueza,
+  dez_menores$Riqueza_identificacao_completa,
   na.rm = TRUE
 )
 
 media_10_maiores <- mean(
-  dez_maiores$Riqueza,
+  dez_maiores$Riqueza_identificacao_completa,
   na.rm = TRUE
 )
 
 cat(
   "\nMédia das 10 menores riquezas:",
   media_10_menores,
-  "espécies\n"
+  "espécies completamente identificadas\n"
 )
 
 cat(
   "Média das 10 maiores riquezas:",
   media_10_maiores,
-  "espécies\n"
+  "espécies completamente identificadas\n"
 )
 
 cat("\nDez menores riquezas:\n")
@@ -260,18 +435,20 @@ print(dez_menores)
 cat("\nDez maiores riquezas:\n")
 print(dez_maiores)
 
+
 # ============================================================
-# 12. CALCULAR A RIQUEZA DE TODOS OS INVENTÁRIOS
+# 15. EXTRAIR TODOS OS INVENTÁRIOS
+#     SOMENTE PARA AS IDENTIFICAÇÕES COMPLETAS
 # ============================================================
 
-todos_inventarios <- dados[
-  ,
+todos_inventarios_completas <- dados[
+  identificacao_completa,
   colunas_inventarios,
   drop = FALSE
 ]
 
-todos_inventarios[] <- lapply(
-  todos_inventarios,
+todos_inventarios_completas[] <- lapply(
+  todos_inventarios_completas,
   function(x) {
     suppressWarnings(
       as.numeric(
@@ -286,42 +463,67 @@ todos_inventarios[] <- lapply(
   }
 )
 
-todos_inventarios[is.na(todos_inventarios)] <- 0
+todos_inventarios_completas[
+  is.na(todos_inventarios_completas)
+] <- 0
+
+
+# ============================================================
+# 16. CALCULAR A RIQUEZA DE TODOS OS INVENTÁRIOS
+#     SOMENTE COM IDENTIFICAÇÕES COMPLETAS
+# ============================================================
 
 riqueza_todos <- colSums(
-  todos_inventarios > 0,
+  todos_inventarios_completas > 0,
   na.rm = TRUE
 )
 
 resultado_todos <- data.frame(
-  Parcela = names(riqueza_todos),
-  Riqueza = as.numeric(riqueza_todos),
+  Inventario = names(riqueza_todos),
+  Riqueza_identificacao_completa = as.numeric(
+    riqueza_todos
+  ),
   stringsAsFactors = FALSE
 )
 
 resultado_todos <- resultado_todos[
-  order(resultado_todos$Riqueza),
+  order(
+    resultado_todos$Riqueza_identificacao_completa
+  ),
   ,
   drop = FALSE
 ]
 
+
 # ============================================================
-# 13. APLICAR A FAIXA DE RIQUEZA A TODOS OS INVENTÁRIOS
+# 17. APLICAR A FAIXA DE RIQUEZA
 # ============================================================
 
 inventarios_selecionados <- resultado_todos[
-  resultado_todos$Riqueza >= media_10_menores &
-    resultado_todos$Riqueza <= media_10_maiores,
+  resultado_todos$Riqueza_identificacao_completa >=
+    media_10_menores &
+    resultado_todos$Riqueza_identificacao_completa <=
+    media_10_maiores,
   ,
   drop = FALSE
 ]
 
 inventarios_excluidos <- resultado_todos[
-  resultado_todos$Riqueza < media_10_menores |
-    resultado_todos$Riqueza > media_10_maiores,
+  resultado_todos$Riqueza_identificacao_completa <
+    media_10_menores |
+    resultado_todos$Riqueza_identificacao_completa >
+    media_10_maiores,
   ,
   drop = FALSE
 ]
+
+cat(
+  "\nFaixa de riqueza utilizada:",
+  media_10_menores,
+  "a",
+  media_10_maiores,
+  "espécies completamente identificadas\n"
+)
 
 cat(
   "\nTotal de inventários:",
@@ -347,17 +549,12 @@ if (nrow(inventarios_selecionados) == 0) {
   )
 }
 
-cat("\nInventários selecionados:\n")
-print(inventarios_selecionados)
-
-cat("\nInventários excluídos:\n")
-print(inventarios_excluidos)
 
 # ============================================================
-# 14. CRIAR A MATRIZ COM ESPÉCIES E INVENTÁRIOS SELECIONADOS
+# 18. CRIAR A MATRIZ COM OS INVENTÁRIOS SELECIONADOS
 # ============================================================
 
-nomes_selecionados <- inventarios_selecionados$Parcela
+nomes_selecionados <- inventarios_selecionados$Inventario
 
 posicoes_selecionadas <- match(
   nomes_selecionados,
@@ -366,20 +563,28 @@ posicoes_selecionadas <- match(
 
 if (any(is.na(posicoes_selecionadas))) {
   stop(
-    "Alguns inventários selecionados não foram encontrados na matriz."
+    paste0(
+      "Alguns inventários selecionados não foram ",
+      "encontrados na matriz."
+    )
   )
 }
 
-# Manter a coluna especie e os inventários selecionados
+# Preservar as quatro primeiras colunas de informação
+# e adicionar os inventários selecionados.
+
 matriz_selecionada <- dados[
   ,
-  c(1:4, posicoes_selecionadas),
+  c(
+    1:4,
+    posicoes_selecionadas
+  ),
   drop = FALSE
 ]
 
 
 # ============================================================
-# 15. REMOVER ESPÉCIES SEM OCORRÊNCIA APÓS O FILTRO
+# 19. REMOVER ESPÉCIES SEM OCORRÊNCIA APÓS O FILTRO
 # ============================================================
 
 matriz_ocorrencias <- matriz_selecionada[
@@ -404,7 +609,9 @@ matriz_ocorrencias[] <- lapply(
   }
 )
 
-matriz_ocorrencias[is.na(matriz_ocorrencias)] <- 0
+matriz_ocorrencias[
+  is.na(matriz_ocorrencias)
+] <- 0
 
 manter_especie <- rowSums(
   matriz_ocorrencias > 0,
@@ -422,6 +629,35 @@ matriz_final <- matriz_selecionada[
   ,
   drop = FALSE
 ]
+
+
+# ============================================================
+# 20. RESUMO DA MATRIZ FINAL
+# ============================================================
+
+classificacao_final <- tolower(
+  trimws(
+    as.character(
+      matriz_final[[nome_col_classificacao]]
+    )
+  )
+)
+
+numero_completas_final <- sum(
+  classificacao_final %in% c(
+    "completa",
+    "completo"
+  ),
+  na.rm = TRUE
+)
+
+numero_incompletas_final <- sum(
+  classificacao_final %in% c(
+    "incompleta",
+    "incompleto"
+  ),
+  na.rm = TRUE
+)
 
 cat(
   "\nNúmero de espécies antes da remoção das linhas vazias:",
@@ -442,28 +678,33 @@ cat(
 )
 
 cat(
-  "Número final de inventários:",
-  ncol(matriz_final) - 1,
+  "Espécies com identificação completa na matriz final:",
+  numero_completas_final,
   "\n"
 )
 
-# Conferir as primeiras linhas da matriz final
-cat("\nPrimeiras linhas da matriz final:\n")
-print(
-  head(
-    matriz_final[, 1:min(6, ncol(matriz_final))]
-  )
+cat(
+  "Espécies com identificação incompleta na matriz final:",
+  numero_incompletas_final,
+  "\n"
 )
 
+cat(
+  "Número final de inventários:",
+  ncol(matriz_final) - 4,
+  "\n"
+)
+
+
 # ============================================================
-# 16. SALVAR OS RESULTADOS
+# 21. SALVAR OS RESULTADOS
 # ============================================================
 
 write.csv2(
   resultado_1ha,
   file.path(
     pasta_saida,
-    "riqueza_parcelas_1ha.csv"
+    "riqueza_completa_parcelas_1ha.csv"
   ),
   row.names = FALSE,
   fileEncoding = "UTF-8"
@@ -473,7 +714,7 @@ write.csv2(
   dez_menores,
   file.path(
     pasta_saida,
-    "dez_menores_riquezas_1ha.csv"
+    "dez_menores_riquezas_completas_1ha.csv"
   ),
   row.names = FALSE,
   fileEncoding = "UTF-8"
@@ -483,7 +724,7 @@ write.csv2(
   dez_maiores,
   file.path(
     pasta_saida,
-    "dez_maiores_riquezas_1ha.csv"
+    "dez_maiores_riquezas_completas_1ha.csv"
   ),
   row.names = FALSE,
   fileEncoding = "UTF-8"
@@ -493,7 +734,7 @@ write.csv2(
   resultado_todos,
   file.path(
     pasta_saida,
-    "riqueza_todos_inventarios.csv"
+    "riqueza_completa_todos_inventarios.csv"
   ),
   row.names = FALSE,
   fileEncoding = "UTF-8"
@@ -503,7 +744,7 @@ write.csv2(
   inventarios_selecionados,
   file.path(
     pasta_saida,
-    "inventarios_selecionados_por_riqueza.csv"
+    "inventarios_selecionados_riqueza_completa.csv"
   ),
   row.names = FALSE,
   fileEncoding = "UTF-8"
@@ -513,7 +754,7 @@ write.csv2(
   inventarios_excluidos,
   file.path(
     pasta_saida,
-    "inventarios_excluidos_por_riqueza.csv"
+    "inventarios_excluidos_riqueza_completa.csv"
   ),
   row.names = FALSE,
   fileEncoding = "UTF-8"
@@ -529,28 +770,69 @@ write.csv2(
   fileEncoding = "UTF-8"
 )
 
-# Tabela principal: espécie + inventários selecionados
 write.csv2(
   matriz_final,
   file.path(
     pasta_saida,
-    "Matriz_original_ocorrencia_brasil_identificacao_recorte1ha.csv"
+    paste0(
+            "Matriz_original_ocorrencia_brasil_identificacao_recorte1ha.csv"
+    )
   ),
   row.names = FALSE,
   fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 22. MENSAGEM FINAL
+# ============================================================
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "FILTRAGEM CONCLUÍDA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Faixa de riqueza:",
+  media_10_menores,
+  "a",
+  media_10_maiores,
+  "\n"
+)
+
+cat(
+  "Inventários mantidos:",
+  nrow(inventarios_selecionados),
+  "\n"
+)
+
+cat(
+  "Inventários excluídos:",
+  nrow(inventarios_excluidos),
+  "\n"
+)
+
+cat(
+  "Espécies mantidas:",
+  nrow(matriz_final),
+  "\n"
+)
+
+cat(
+  "Inventários na matriz final:",
+  ncol(matriz_final) - 4,
+  "\n"
 )
 
 cat(
   "\nArquivos salvos em:\n",
   pasta_saida,
   "\n"
-)
-
-cat(
-  "\nA tabela principal foi salva como:\n",
-  "matriz_filtrada_por_faixa_de_riqueza.csv\n"
-)
-
-cat(
-  "A primeira coluna dessa tabela é 'especie'.\n"
 )
