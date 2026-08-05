@@ -1,35 +1,28 @@
 # ============================================================
-# SELECIONAR NA MATRIZ DE ABUNDÂNCIA AS MESMAS ASSEMBLEIAS
-# UTILIZADAS NA MATRIZ DE PRESENÇA E AUSÊNCIA
+# RECORTAR A MATRIZ DE ABUNDÂNCIA COM OS MESMOS INVENTÁRIOS
+# DA MATRIZ DE OCORRÊNCIA JÁ FILTRADA
 # ============================================================
 
-# ------------------------------------------------------------
-# 1. Definir caminhos
-# ------------------------------------------------------------
 
-pasta_caapora <- paste0(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/"
+# ============================================================
+# 1. DEFINIR CAMINHOS
+# ============================================================
+
+arquivo_abundancia <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matrizes_abundancia/",
+  "Matriz_original_abundancia_brasil_identificacao.csv"
 )
 
-# Matriz original de abundância, antes do filtro de riqueza
-arquivo_abundancia <- file.path(
-  pasta_caapora,
-  "abundancia",
-  "inventario_completo_sem_indeterminadas.csv"
+arquivo_ocorrencia_filtrada <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matrizes_ocorrência/",
+  "Matriz_original_ocorrencia_brasil_identificacao_recorte1ha.csv"
 )
 
-# Lista produzida no filtro da matriz de presença e ausência
-arquivo_selecionados_presenca <- file.path(
-  pasta_caapora,
-  "filtragem_riqueza",
-  "inventarios_selecionados_por_riqueza.csv"
-)
-
-# Pasta onde serão salvos os resultados da abundância
-pasta_saida <- file.path(
-  pasta_caapora,
-  "abundancia",
-  "filtragem_mesmos_inventarios_presenca"
+pasta_saida <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matrizes_abundancia"
 )
 
 dir.create(
@@ -38,11 +31,12 @@ dir.create(
   showWarnings = FALSE
 )
 
-# ------------------------------------------------------------
-# 2. Ler a matriz de abundância
-# ------------------------------------------------------------
 
-abundancia <- read.csv2(
+# ============================================================
+# 2. LER A MATRIZ DE ABUNDÂNCIA
+# ============================================================
+
+dados_abundancia <- read.csv2(
   arquivo_abundancia,
   header = TRUE,
   stringsAsFactors = FALSE,
@@ -50,130 +44,207 @@ abundancia <- read.csv2(
   fileEncoding = "latin1"
 )
 
-# Padronizar os nomes das colunas
-names(abundancia) <- trimws(names(abundancia))
 
-# Localizar a coluna de espécies
-col_especie <- which(
-  tolower(trimws(names(abundancia))) == "especie"
-)
+# ============================================================
+# 3. LER A MATRIZ DE OCORRÊNCIA JÁ FILTRADA
+# ============================================================
 
-if (length(col_especie) != 1) {
-  stop(
-    "A coluna 'especie' não foi encontrada ou está duplicada."
-  )
-}
-
-# ------------------------------------------------------------
-# 3. Ler as assembleias selecionadas na presença/ausência
-# ------------------------------------------------------------
-
-selecionados_presenca <- read.csv2(
-  arquivo_selecionados_presenca,
+ocorrencia_filtrada <- read.csv2(
+  arquivo_ocorrencia_filtrada,
   header = TRUE,
   stringsAsFactors = FALSE,
   check.names = FALSE,
-  fileEncoding = "UTF-8"
+  fileEncoding = "latin1"
 )
 
-# Conferir se a coluna Parcela existe
-if (!"Parcela" %in% names(selecionados_presenca)) {
+
+# ============================================================
+# 4. PADRONIZAR OS NOMES DAS COLUNAS
+# ============================================================
+
+names(dados_abundancia) <- trimws(
+  names(dados_abundancia)
+)
+
+names(ocorrencia_filtrada) <- trimws(
+  names(ocorrencia_filtrada)
+)
+
+
+# ============================================================
+# 5. CONFERIR A ESTRUTURA DAS MATRIZES
+# ============================================================
+
+# As quatro primeiras colunas contêm informações das espécies.
+# Da quinta coluna em diante estão os inventários.
+
+if (ncol(dados_abundancia) < 5) {
   stop(
-    "A coluna 'Parcela' não foi encontrada no arquivo de inventários selecionados."
+    "A matriz de abundância possui menos de cinco colunas."
   )
 }
 
-assembleias_presenca <- unique(
-  trimws(
-    as.character(
-      selecionados_presenca$Parcela
+if (ncol(ocorrencia_filtrada) < 5) {
+  stop(
+    "A matriz de ocorrência filtrada possui menos de cinco colunas."
+  )
+}
+
+colunas_informacoes <- 1:4
+
+cat(
+  "\nColunas de informações da matriz de abundância:\n"
+)
+
+print(
+  names(dados_abundancia)[colunas_informacoes]
+)
+
+cat(
+  "\nColunas de informações da matriz de ocorrência:\n"
+)
+
+print(
+  names(ocorrencia_filtrada)[colunas_informacoes]
+)
+
+
+# ============================================================
+# 6. EXTRAIR OS INVENTÁRIOS DA MATRIZ DE OCORRÊNCIA
+# ============================================================
+
+lista_inventarios <- names(
+  ocorrencia_filtrada
+)[5:ncol(ocorrencia_filtrada)]
+
+lista_inventarios <- trimws(
+  lista_inventarios
+)
+
+lista_inventarios <- lista_inventarios[
+  !is.na(lista_inventarios) &
+    lista_inventarios != ""
+]
+
+lista_inventarios <- unique(
+  lista_inventarios
+)
+
+cat(
+  "\nNúmero de inventários na matriz de ocorrência filtrada:",
+  length(lista_inventarios),
+  "\n"
+)
+
+
+# ============================================================
+# 7. VERIFICAR QUAIS INVENTÁRIOS EXISTEM NA ABUNDÂNCIA
+# ============================================================
+
+inventarios_encontrados <- lista_inventarios[
+  lista_inventarios %in% names(dados_abundancia)
+]
+
+inventarios_nao_encontrados <- lista_inventarios[
+  !lista_inventarios %in% names(dados_abundancia)
+]
+
+cat(
+  "\nInventários encontrados na matriz de abundância:",
+  length(inventarios_encontrados),
+  "\n"
+)
+
+cat(
+  "Inventários não encontrados na matriz de abundância:",
+  length(inventarios_nao_encontrados),
+  "\n"
+)
+
+if (length(inventarios_nao_encontrados) > 0) {
+  
+  cat(
+    "\nInventários não encontrados:\n"
+  )
+  
+  print(
+    inventarios_nao_encontrados
+  )
+}
+
+if (length(inventarios_encontrados) == 0) {
+  stop(
+    paste0(
+      "Nenhum inventário da matriz de ocorrência filtrada ",
+      "foi encontrado na matriz de abundância."
     )
   )
+}
+
+
+# ============================================================
+# 8. CRIAR A MATRIZ DE ABUNDÂNCIA RECORTADA
+# ============================================================
+
+# Nomes das quatro primeiras colunas de informações
+nomes_colunas_informacoes <- names(
+  dados_abundancia
+)[1:4]
+
+# Conferir se todos os inventários realmente existem
+colunas_para_manter <- c(
+  nomes_colunas_informacoes,
+  inventarios_encontrados
 )
 
-assembleias_presenca <- assembleias_presenca[
-  !is.na(assembleias_presenca) &
-    assembleias_presenca != ""
+colunas_ausentes <- colunas_para_manter[
+  !colunas_para_manter %in% names(dados_abundancia)
 ]
 
-cat(
-  "\nAssembleias selecionadas na presença/ausência:",
-  length(assembleias_presenca),
-  "\n"
-)
-
-# ------------------------------------------------------------
-# 4. Identificar quais assembleias existem na abundância
-# ------------------------------------------------------------
-
-colunas_abundancia <- names(abundancia)[
-  seq_along(names(abundancia)) != col_especie
-]
-
-assembleias_comuns <- intersect(
-  assembleias_presenca,
-  colunas_abundancia
-)
-
-assembleias_presenca_sem_abundancia <- setdiff(
-  assembleias_presenca,
-  colunas_abundancia
-)
-
-assembleias_abundancia_nao_selecionadas <- setdiff(
-  colunas_abundancia,
-  assembleias_presenca
-)
-
-cat(
-  "Assembleias selecionadas disponíveis na abundância:",
-  length(assembleias_comuns),
-  "\n"
-)
-
-cat(
-  "Assembleias da presença sem coluna na abundância:",
-  length(assembleias_presenca_sem_abundancia),
-  "\n"
-)
-
-cat(
-  "Assembleias da abundância que não foram selecionadas na presença:",
-  length(assembleias_abundancia_nao_selecionadas),
-  "\n"
-)
-
-if (length(assembleias_comuns) == 0) {
+if (length(colunas_ausentes) > 0) {
   stop(
-    "Nenhuma assembleia selecionada na presença foi encontrada na matriz de abundância."
+    paste0(
+      "As seguintes colunas não foram encontradas na matriz de abundância: ",
+      paste(colunas_ausentes, collapse = ", ")
+    )
   )
 }
 
-# ------------------------------------------------------------
-# 5. Criar matriz de abundância com as assembleias em comum
-# ------------------------------------------------------------
-
-matriz_selecionada <- abundancia[
+matriz_selecionada <- dados_abundancia[
   ,
-  c(col_especie, match(assembleias_comuns, names(abundancia))),
+  colunas_para_manter,
   drop = FALSE
 ]
 
-names(matriz_selecionada)[1] <- "especie"
+cat(
+  "\nDimensão da matriz antes da remoção das espécies vazias:\n"
+)
 
-# ------------------------------------------------------------
-# 6. Converter abundâncias para números
-# ------------------------------------------------------------
+cat(
+  "Número de espécies:",
+  nrow(matriz_selecionada),
+  "\n"
+)
 
-matriz_numerica <- matriz_selecionada[
+cat(
+  "Número de inventários:",
+  length(inventarios_encontrados),
+  "\n"
+)
+# ============================================================
+# 9. EXTRAIR E CONVERTER AS COLUNAS DE ABUNDÂNCIA
+# ============================================================
+
+matriz_abundancias <- matriz_selecionada[
   ,
-  -1,
+  5:ncol(matriz_selecionada),
   drop = FALSE
 ]
 
-matriz_numerica[] <- lapply(
-  matriz_numerica,
+matriz_abundancias[] <- lapply(
+  matriz_abundancias,
   function(x) {
+    
     suppressWarnings(
       as.numeric(
         gsub(
@@ -187,115 +258,300 @@ matriz_numerica[] <- lapply(
   }
 )
 
-matriz_numerica[is.na(matriz_numerica)] <- 0
+matriz_abundancias[
+  is.na(matriz_abundancias)
+] <- 0
 
-# ------------------------------------------------------------
-# 7. Remover espécies sem abundância nas assembleias mantidas
-# ------------------------------------------------------------
+
+# ============================================================
+# 10. REMOVER ESPÉCIES SEM ABUNDÂNCIA
+# ============================================================
+
+# A espécie é mantida quando apresenta abundância maior que zero
+# em pelo menos um dos inventários selecionados.
 
 manter_especie <- rowSums(
-  matriz_numerica,
+  matriz_abundancias,
   na.rm = TRUE
 ) > 0
 
-especies_sem_abundancia <- matriz_selecionada[
+especies_excluidas <- matriz_selecionada[
   !manter_especie,
   ,
   drop = FALSE
 ]
 
-matriz_final_abundancia <- matriz_selecionada[
+matriz_final <- matriz_selecionada[
   manter_especie,
   ,
   drop = FALSE
 ]
 
+
+# ============================================================
+# 11. CONFERIR IDENTIFICAÇÕES COMPLETAS E INCOMPLETAS
+# ============================================================
+
+# O script mantém tanto identificações completas quanto
+# incompletas. Esta etapa apenas apresenta um resumo.
+
+col_identificacao <- which(
+  tolower(trimws(names(matriz_final))) == "identificacao"
+)
+
+if (length(col_identificacao) == 1) {
+  
+  classificacao_final <- tolower(
+    trimws(
+      as.character(
+        matriz_final[[col_identificacao]]
+      )
+    )
+  )
+  
+  numero_completas <- sum(
+    classificacao_final %in% c(
+      "completa",
+      "completo"
+    ),
+    na.rm = TRUE
+  )
+  
+  numero_incompletas <- sum(
+    classificacao_final %in% c(
+      "incompleta",
+      "incompleto"
+    ),
+    na.rm = TRUE
+  )
+  
+  numero_outras <- sum(
+    !classificacao_final %in% c(
+      "completa",
+      "completo",
+      "incompleta",
+      "incompleto"
+    ),
+    na.rm = TRUE
+  )
+  
+} else {
+  
+  numero_completas <- NA
+  numero_incompletas <- NA
+  numero_outras <- NA
+  
+  cat(
+    paste0(
+      "\nA coluna 'identificacao' não foi encontrada ",
+      "ou está duplicada. O resumo por identificação não foi calculado.\n"
+    )
+  )
+}
+
+
+# ============================================================
+# 12. CONFERIR OS RESULTADOS
+# ============================================================
+
 cat(
-  "\nEspécies antes da remoção das linhas vazias:",
+  "\n============================================\n"
+)
+
+cat(
+  "RECORTE DA MATRIZ DE ABUNDÂNCIA CONCLUÍDO\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Inventários na matriz de ocorrência filtrada:",
+  length(lista_inventarios),
+  "\n"
+)
+
+cat(
+  "Inventários encontrados na abundância:",
+  length(inventarios_encontrados),
+  "\n"
+)
+
+cat(
+  "Inventários não encontrados na abundância:",
+  length(inventarios_nao_encontrados),
+  "\n"
+)
+
+cat(
+  "Espécies antes da remoção das linhas vazias:",
   nrow(matriz_selecionada),
   "\n"
 )
 
 cat(
-  "Espécies sem abundância nas assembleias selecionadas:",
-  nrow(especies_sem_abundancia),
+  "Espécies removidas por ausência nos inventários selecionados:",
+  nrow(especies_excluidas),
   "\n"
 )
 
 cat(
   "Número final de espécies:",
-  nrow(matriz_final_abundancia),
+  nrow(matriz_final),
   "\n"
 )
 
 cat(
-  "Número final de assembleias:",
-  ncol(matriz_final_abundancia) - 1,
+  "Número final de inventários:",
+  ncol(matriz_final) - 4,
   "\n"
 )
 
-# ------------------------------------------------------------
-# 8. Salvar os resultados
-# ------------------------------------------------------------
+if (!is.na(numero_completas)) {
+  
+  cat(
+    "Espécies com identificação completa:",
+    numero_completas,
+    "\n"
+  )
+  
+  cat(
+    "Espécies com identificação incompleta:",
+    numero_incompletas,
+    "\n"
+  )
+  
+  cat(
+    "Espécies com outra classificação ou sem informação:",
+    numero_outras,
+    "\n"
+  )
+}
+
+
+# ============================================================
+# 13. SALVAR A MATRIZ FINAL
+# ============================================================
 
 write.csv2(
-  matriz_final_abundancia,
+  matriz_final,
   file.path(
     pasta_saida,
-    "matriz_abundancia_mesmas_assembleias_presenca.csv"
+    "Matriz_original_abundancia_brasil_identificacao_recorte1ha.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 14. SALVAR AS ESPÉCIES REMOVIDAS
+# ============================================================
+
+write.csv2(
+  especies_excluidas,
+  file.path(
+    pasta_saida,
+    "especies_sem_abundancia_apos_recorte.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 15. SALVAR OS INVENTÁRIOS ENCONTRADOS
+# ============================================================
+
+tabela_inventarios_encontrados <- data.frame(
+  Inventario = inventarios_encontrados,
+  stringsAsFactors = FALSE
+)
+
+write.csv2(
+  tabela_inventarios_encontrados,
+  file.path(
+    pasta_saida,
+    "inventarios_ocorrencia_encontrados_na_abundancia.csv"
   ),
   row.names = FALSE,
   fileEncoding = "UTF-8"
 )
 
+
+# ============================================================
+# 16. SALVAR OS INVENTÁRIOS NÃO ENCONTRADOS
+# ============================================================
+
+tabela_inventarios_nao_encontrados <- data.frame(
+  Inventario = inventarios_nao_encontrados,
+  stringsAsFactors = FALSE
+)
+
 write.csv2(
-  data.frame(
-    Parcela = assembleias_comuns
-  ),
+  tabela_inventarios_nao_encontrados,
   file.path(
     pasta_saida,
-    "assembleias_comuns_presenca_abundancia.csv"
+    "inventarios_ocorrencia_nao_encontrados_na_abundancia.csv"
   ),
   row.names = FALSE,
   fileEncoding = "UTF-8"
 )
 
-write.csv2(
-  data.frame(
-    Parcela = assembleias_presenca_sem_abundancia
+
+# ============================================================
+# 17. SALVAR UM RESUMO DO RECORTE
+# ============================================================
+
+resumo_recorte <- data.frame(
+  Indicador = c(
+    "Inventários na ocorrência filtrada",
+    "Inventários encontrados na abundância",
+    "Inventários não encontrados na abundância",
+    "Espécies antes da remoção das linhas vazias",
+    "Espécies removidas",
+    "Espécies finais",
+    "Identificações completas",
+    "Identificações incompletas",
+    "Outras classificações"
   ),
+  Valor = c(
+    length(lista_inventarios),
+    length(inventarios_encontrados),
+    length(inventarios_nao_encontrados),
+    nrow(matriz_selecionada),
+    nrow(especies_excluidas),
+    nrow(matriz_final),
+    numero_completas,
+    numero_incompletas,
+    numero_outras
+  ),
+  stringsAsFactors = FALSE
+)
+
+write.csv2(
+  resumo_recorte,
   file.path(
     pasta_saida,
-    "assembleias_presenca_sem_dados_abundancia.csv"
+    "resumo_recorte_matriz_abundancia.csv"
   ),
   row.names = FALSE,
   fileEncoding = "UTF-8"
 )
 
-write.csv2(
-  data.frame(
-    Parcela = assembleias_abundancia_nao_selecionadas
-  ),
-  file.path(
-    pasta_saida,
-    "assembleias_abundancia_nao_selecionadas_presenca.csv"
-  ),
-  row.names = FALSE,
-  fileEncoding = "UTF-8"
-)
 
-write.csv2(
-  especies_sem_abundancia,
-  file.path(
-    pasta_saida,
-    "especies_sem_abundancia_apos_selecao.csv"
-  ),
-  row.names = FALSE,
-  fileEncoding = "UTF-8"
-)
+# ============================================================
+# 18. MENSAGEM FINAL
+# ============================================================
 
 cat(
-  "\nResultados salvos em:\n",
+  "\nArquivos salvos em:\n",
   pasta_saida,
   "\n"
+)
+
+cat(
+  "\nMatriz principal salva como:\n",
+  "Matriz_abundancia_recorte_inventarios_ocorrencia.csv\n"
 )
