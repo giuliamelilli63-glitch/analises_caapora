@@ -413,13 +413,37 @@ matriz_harmonizada <- matriz_harmonizada %>%
   )
 
 # ------------------------------------------------------------
-# 17. Identificações completas sem correspondência
+# 17. Atualizar a coluna identificacao e registrar
+#     identificações completas sem correspondência
 # ------------------------------------------------------------
+
+matriz_harmonizada <- matriz_harmonizada %>%
+  mutate(
+    identificacao = case_when(
+      
+      identificacao_completa &
+        encontrou_correspondencia ~ "completa",
+      
+      identificacao_completa &
+        !encontrou_correspondencia ~ "sem_correspondencia",
+      
+      TRUE ~ identificacao_original
+    )
+  )
+
+cat("\nValores finais da coluna identificacao:\n")
+
+print(
+  matriz_harmonizada %>%
+    count(
+      identificacao,
+      sort = TRUE
+    )
+)
 
 completas_sem_correspondencia <- matriz_harmonizada %>%
   filter(
-    identificacao_completa,
-    !encontrou_correspondencia
+    identificacao == "sem_correspondencia"
   ) %>%
   select(
     numero_linha_original,
@@ -429,7 +453,9 @@ completas_sem_correspondencia <- matriz_harmonizada %>%
     identificacao_original,
     chave_taxonomica
   ) %>%
-  arrange(especie_original)
+  arrange(
+    especie_original
+  )
 
 cat(
   "\nIdentificações completas sem correspondência:",
@@ -445,7 +471,6 @@ write.xlsx(
   ),
   overwrite = TRUE
 )
-
 # ------------------------------------------------------------
 # 18. Criar tabela de todos os nomes harmonizados
 # ------------------------------------------------------------
