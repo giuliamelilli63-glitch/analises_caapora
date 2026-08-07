@@ -1,0 +1,1281 @@
+# ============================================================
+# COMPLEMENTAR FORMAS DE VIDA AUSENTES NO REFLORA
+# COM O DARWIN CORE DO POWO / WCVP
+#
+# O POWO é usado SOMENTE quando LifeForm_REFLORA está vazio.
+#
+# Saída final:
+# - LifeForm_REFLORA
+# - LifeForm_POWO_original
+# - LifeForm_POWO
+# - LifeForm_FINAL
+# - Fonte_LifeForm
+# ============================================================
+
+
+# ============================================================
+# 1. PACOTES
+# ============================================================
+
+pacotes <- c(
+  "readxl",
+  "readr",
+  "dplyr",
+  "stringr",
+  "purrr",
+  "jsonlite",
+  "openxlsx"
+)
+
+pacotes_faltantes <- pacotes[
+  !pacotes %in% rownames(installed.packages())
+]
+
+if (length(pacotes_faltantes) > 0) {
+  install.packages(pacotes_faltantes)
+}
+
+library(readxl)
+library(readr)
+library(dplyr)
+library(stringr)
+library(purrr)
+library(jsonlite)
+library(openxlsx)
+
+
+# ============================================================
+# 2. CAMINHOS
+# ============================================================
+
+# Resultado gerado pelo script do REFLORA
+
+arquivo_reflora <- file.path(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora",
+  "nomes_botanicos",
+  "dwca-lista_especies_flora_brasil-v393.428",
+  "Conferencia_habito_distribuicao_REFLORA.xlsx"
+)
+
+
+# Darwin Core do POWO / WCVP
+#
+# Ajuste somente se o arquivo estiver em outra pasta.
+
+arquivo_powo_zip <- file.path(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora",
+  "nomes_botanicos",
+  "wcvp_dwca.zip"
+)
+
+
+# Arquivo final
+
+arquivo_saida <- file.path(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora",
+  "nomes_botanicos",
+  "Conferencia_REFLORA_LifeForm_complementada_POWO.xlsx"
+)
+
+
+# ============================================================
+# 3. VERIFICAR ARQUIVOS
+# ============================================================
+
+if (!file.exists(arquivo_reflora)) {
+  stop(
+    paste0(
+      "Arquivo REFLORA não encontrado:\n",
+      arquivo_reflora
+    )
+  )
+}
+
+if (!file.exists(arquivo_powo_zip)) {
+  stop(
+    paste0(
+      "Arquivo POWO não encontrado:\n",
+      arquivo_powo_zip
+    )
+  )
+}
+
+
+# ============================================================
+# 4. FUNÇÃO PARA NORMALIZAR NOMES BOTÂNICOS
+# ============================================================
+
+normalizar_nome <- function(nome) {
+  
+  nome %>%
+    as.character() %>%
+    str_replace_all("\u00A0", " ") %>%
+    str_squish() %>%
+    str_to_lower() %>%
+    str_replace_all("×", "x") %>%
+    str_replace_all("[[:punct:]]+$", "") %>%
+    str_squish()
+}
+
+
+# ============================================================
+# 5. FUNÇÃO PARA EXTRAIR O JSON DO POWO
+# ============================================================
+
+extrair_json_powo <- function(texto, campo) {
+  
+  if (
+    is.na(texto) ||
+      texto == "" ||
+      str_trim(texto) == ""
+  ) {
+    return(NA_character_)
+  }
+  
+  tryCatch(
+    {
+      
+      objeto <- jsonlite::fromJSON(
+        texto
+      )
+      
+      valor <- objeto[[campo]]
+      
+      if (
+        is.null(valor) ||
+          length(valor) == 0
+      ) {
+        
+        return(NA_character_)
+      }
+      
+      valor <- as.character(valor)
+      
+      valor <- valor[
+        !is.na(valor) &
+          valor != ""
+      ]
+      
+      if (length(valor) == 0) {
+        
+        return(NA_character_)
+        
+      } else {
+        
+        return(
+          paste(
+            unique(valor),
+            collapse = "; "
+          )
+        )
+      }
+    },
+    
+    error = function(e) {
+      
+      NA_character_
+    }
+  )
+}
+
+
+# ============================================================
+# 6. FUNÇÃO PARA PADRONIZAR A FORMA DE VIDA DO POWO
+# ============================================================
+
+# Converte a terminologia inglesa do POWO para o mesmo
+# vocabulário usado pelo REFLORA.
+#
+# Exemplos:
+#
+# tree
+#     -> Árvore
+#
+# shrub or tree
+#     -> Arbusto; Árvore
+#
+# liana
+#     -> Liana/volúvel/trepadeira
+#
+# shrub, tree, climber
+#     -> Arbusto; Árvore; Liana/volúvel/trepadeira
+
+
+padronizar_lifeform_powo <- function(x) {
+  
+  if (
+    is.na(x) ||
+      x == "" ||
+      str_trim(x) == ""
+  ) {
+    return(NA_character_)
+  }
+  
+  
+  # ----------------------------------------------------------
+  # Padronizar texto
+  # ----------------------------------------------------------
+  
+  x <- x %>%
+    str_to_lower() %>%
+    str_replace_all("/", ",") %>%
+    str_replace_all(";", ",") %>%
+    str_replace_all("\\band\\b", ",") %>%
+    str_replace_all("\\bor\\b", ",") %>%
+    str_squish()
+  
+  
+  # ----------------------------------------------------------
+  # Separar diferentes formas de vida
+  # ----------------------------------------------------------
+  
+  partes <- unlist(
+    str_split(
+      x,
+      ","
+    )
+  )
+  
+  partes <- str_squish(
+    partes
+  )
+  
+  partes <- partes[
+    partes != ""
+  ]
+  
+  
+  # ----------------------------------------------------------
+  # Traduzir
+  # ----------------------------------------------------------
+  
+  traduzidas <- map_chr(
+    partes,
+    
+    function(valor) {
+      
+      case_when(
+        
+        # ----------------------------------------------------
+        # SUBARBUSTO
+        # Deve vir antes de shrub,
+        # pois "subshrub" contém "shrub".
+        # ----------------------------------------------------
+        
+        str_detect(
+          valor,
+          "subshrub|sub-shrub|suffrutex|suffruticose"
+        ) ~
+          "Subarbusto",
+        
+        
+        # ----------------------------------------------------
+        # ÁRVORE
+        # ----------------------------------------------------
+        
+        str_detect(
+          valor,
+          "tree|arborescent"
+        ) ~
+          "Árvore",
+        
+        
+        # ----------------------------------------------------
+        # ARBUSTO
+        # ----------------------------------------------------
+        
+        str_detect(
+          valor,
+          "shrub|shrubby"
+        ) ~
+          "Arbusto",
+        
+        
+        # ----------------------------------------------------
+        # LIANA / VOLÚVEL / TREPADEIRA
+        # ----------------------------------------------------
+        
+        str_detect(
+          valor,
+          paste0(
+            "liana|",
+            "climber|climbing|",
+            "vine|vining|",
+            "scandent|",
+            "twiner|twining|",
+            "voluble"
+          )
+        ) ~
+          "Liana/volúvel/trepadeira",
+        
+        
+        # ----------------------------------------------------
+        # HEMIEPÍFITA
+        # Deve vir antes de epiphyte.
+        # ----------------------------------------------------
+        
+        str_detect(
+          valor,
+          "hemiepiphyte|hemi-epiphyte|hemiepiphytic"
+        ) ~
+          "Hemiepífita",
+        
+        
+        # ----------------------------------------------------
+        # EPÍFITA
+        # ----------------------------------------------------
+        
+        str_detect(
+          valor,
+          "epiphyte|epiphytic"
+        ) ~
+          "Epífita",
+        
+        
+        # ----------------------------------------------------
+        # PALMEIRA
+        # ----------------------------------------------------
+        
+        str_detect(
+          valor,
+          "palm"
+        ) ~
+          "Palmeira",
+        
+        
+        # ----------------------------------------------------
+        # ERVA
+        # ----------------------------------------------------
+        
+        str_detect(
+          valor,
+          "herb|herbaceous|forb"
+        ) ~
+          "Erva",
+        
+        
+        # ----------------------------------------------------
+        # AQUÁTICA
+        # ----------------------------------------------------
+        
+        str_detect(
+          valor,
+          "aquatic"
+        ) ~
+          "Erva aquática",
+        
+        
+        # ----------------------------------------------------
+        # PARASITA
+        # ----------------------------------------------------
+        
+        str_detect(
+          valor,
+          "parasite|parasitic"
+        ) ~
+          "Parasita",
+        
+        
+        # ----------------------------------------------------
+        # NÃO RECONHECIDO
+        # ----------------------------------------------------
+        
+        TRUE ~
+          NA_character_
+      )
+    }
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Remover categorias vazias
+  # ----------------------------------------------------------
+  
+  traduzidas <- traduzidas[
+    !is.na(traduzidas) &
+      traduzidas != ""
+  ]
+  
+  
+  # ----------------------------------------------------------
+  # Remover duplicatas
+  # ----------------------------------------------------------
+  
+  traduzidas <- unique(
+    traduzidas
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Resultado final
+  # ----------------------------------------------------------
+  
+  if (length(traduzidas) == 0) {
+    
+    return(NA_character_)
+    
+  } else {
+    
+    return(
+      paste(
+        sort(traduzidas),
+        collapse = "; "
+      )
+    )
+  }
+}
+
+
+# ============================================================
+# 7. LER O RESULTADO DO REFLORA
+# ============================================================
+
+resultado_reflora <- read_excel(
+  arquivo_reflora,
+  sheet = "Resultado_completo",
+  .name_repair = "unique"
+)
+
+cat(
+  "\nNúmero de espécies na tabela:",
+  nrow(resultado_reflora),
+  "\n"
+)
+
+
+# ============================================================
+# 8. CONFERIR COLUNAS NECESSÁRIAS
+# ============================================================
+
+colunas_necessarias <- c(
+  "especie",
+  "LifeForm_REFLORA"
+)
+
+colunas_ausentes <- setdiff(
+  colunas_necessarias,
+  names(resultado_reflora)
+)
+
+if (length(colunas_ausentes) > 0) {
+  
+  stop(
+    paste0(
+      "As seguintes colunas não foram encontradas:\n",
+      paste(
+        colunas_ausentes,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ============================================================
+# 9. IDENTIFICAR ESPÉCIES SEM FORMA DE VIDA NO REFLORA
+# ============================================================
+
+resultado_reflora <- resultado_reflora %>%
+  mutate(
+    
+    LifeForm_REFLORA = as.character(
+      LifeForm_REFLORA
+    ),
+    
+    LifeForm_REFLORA = str_squish(
+      LifeForm_REFLORA
+    ),
+    
+    LifeForm_REFLORA = na_if(
+      LifeForm_REFLORA,
+      ""
+    ),
+    
+    nome_busca_powo = normalizar_nome(
+      especie
+    ),
+    
+    precisa_powo =
+      is.na(LifeForm_REFLORA)
+  )
+
+
+cat(
+  "\nCom forma de vida no REFLORA:",
+  sum(
+    !resultado_reflora$precisa_powo
+  ),
+  "\n"
+)
+
+cat(
+  "Sem forma de vida no REFLORA:",
+  sum(
+    resultado_reflora$precisa_powo
+  ),
+  "\n"
+)
+
+
+# ============================================================
+# 10. PEGAR A LISTA DE ESPÉCIES QUE REALMENTE PRECISAM DO POWO
+# ============================================================
+
+especies_para_powo <- resultado_reflora %>%
+  
+  filter(
+    precisa_powo
+  ) %>%
+  
+  distinct(
+    nome_busca_powo
+  )
+
+
+# ============================================================
+# 11. DESCOMPACTAR O DARWIN CORE DO POWO
+# ============================================================
+
+pasta_temp_powo <- file.path(
+  tempdir(),
+  "powo_wcvp_lifeform"
+)
+
+dir.create(
+  pasta_temp_powo,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+unzip(
+  arquivo_powo_zip,
+  exdir = pasta_temp_powo
+)
+
+
+# ============================================================
+# 12. LOCALIZAR O ARQUIVO TAXON
+# ============================================================
+
+arquivo_taxon_powo <- file.path(
+  pasta_temp_powo,
+  "wcvp_taxon.csv"
+)
+
+if (!file.exists(arquivo_taxon_powo)) {
+  
+  stop(
+    "O arquivo wcvp_taxon.csv não foi encontrado dentro do ZIP."
+  )
+}
+
+
+# ============================================================
+# 13. LER SOMENTE O ARQUIVO TAXON DO POWO
+# ============================================================
+
+# Não lemos distribution.
+# Não extraímos climate.
+# Isso deixa o processamento muito mais leve.
+
+taxon_powo <- read_delim(
+  arquivo_taxon_powo,
+  delim = "|",
+  col_types = cols(
+    .default = col_character()
+  ),
+  na = c("", "NA"),
+  progress = TRUE,
+  show_col_types = FALSE
+)
+
+
+# Padronizar nomes das colunas
+
+names(taxon_powo) <- tolower(
+  names(taxon_powo)
+)
+
+
+cat(
+  "\nNúmero de registros no POWO/WCVP:",
+  nrow(taxon_powo),
+  "\n"
+)
+
+
+# ============================================================
+# 14. CONFERIR NOMES DAS COLUNAS IMPORTANTES
+# ============================================================
+
+cat(
+  "\nColunas encontradas no arquivo POWO:\n"
+)
+
+print(
+  names(taxon_powo)
+)
+
+
+# ============================================================
+# 15. CRIAR NOME NORMALIZADO
+# ============================================================
+
+# IMPORTANTE:
+#
+# No arquivo que você enviou, a coluna aparece como:
+#
+# scientfiicname
+#
+# e não scientificname.
+
+if (!"scientfiicname" %in% names(taxon_powo)) {
+  
+  stop(
+    paste0(
+      "A coluna 'scientfiicname' não foi encontrada. ",
+      "Confira os nomes mostrados acima."
+    )
+  )
+}
+
+
+taxon_powo <- taxon_powo %>%
+  
+  mutate(
+    
+    nome_powo_normalizado =
+      normalizar_nome(
+        scientfiicname
+      )
+  )
+
+
+# ============================================================
+# 16. FILTRAR O POWO ANTES DA EXTRAÇÃO DO JSON
+# ============================================================
+
+# Esta etapa é importante para deixar o processamento leve.
+#
+# Em vez de extrair lifeform de TODAS as espécies do POWO,
+# ficamos apenas com os nomes necessários.
+
+taxon_powo_filtrado <- taxon_powo %>%
+  
+  filter(
+    nome_powo_normalizado %in%
+      especies_para_powo$nome_busca_powo
+  )
+
+
+cat(
+  "\nRegistros do POWO correspondentes às espécies necessárias:",
+  nrow(taxon_powo_filtrado),
+  "\n"
+)
+
+
+# ============================================================
+# 17. EXTRAIR SOMENTE LIFEFORM
+# ============================================================
+
+taxon_powo_filtrado <- taxon_powo_filtrado %>%
+  
+  mutate(
+    
+    # ----------------------------------------
+    # Valor original do POWO
+    # ----------------------------------------
+    
+    LifeForm_POWO_original = map_chr(
+      dynamicproperties,
+      extrair_json_powo,
+      campo = "lifeform"
+    ),
+    
+    
+    # ----------------------------------------
+    # Valor traduzido e padronizado
+    # ----------------------------------------
+    
+    LifeForm_POWO = map_chr(
+      LifeForm_POWO_original,
+      padronizar_lifeform_powo
+    )
+  )
+
+
+# ============================================================
+# 18. PADRONIZAR VALORES VAZIOS
+# ============================================================
+
+taxon_powo_filtrado <- taxon_powo_filtrado %>%
+  
+  mutate(
+    
+    LifeForm_POWO_original =
+      na_if(
+        str_squish(
+          LifeForm_POWO_original
+        ),
+        ""
+      ),
+    
+    LifeForm_POWO =
+      na_if(
+        str_squish(
+          LifeForm_POWO
+        ),
+        ""
+      )
+  )
+
+
+# ============================================================
+# 19. CRIAR BASE ENXUTA DO POWO
+# ============================================================
+
+base_powo <- taxon_powo_filtrado %>%
+  
+  select(
+    
+    nome_powo_normalizado,
+    
+    Nome_POWO =
+      scientfiicname,
+    
+    Status_POWO =
+      taxonomicstatus,
+    
+    LifeForm_POWO_original,
+    
+    LifeForm_POWO
+  )
+
+
+# ============================================================
+# 20. PRIORIZAR O MELHOR REGISTRO
+# ============================================================
+
+# Se houver mais de um registro com o mesmo nome:
+#
+# 1. prioriza aquele com lifeform;
+# 2. depois prioriza nome aceito;
+# 3. depois sinônimo.
+
+base_powo <- base_powo %>%
+  
+  mutate(
+    
+    possui_lifeform =
+      !is.na(LifeForm_POWO),
+    
+    prioridade_status = case_when(
+      
+      str_to_lower(
+        Status_POWO
+      ) == "accepted" ~
+        1L,
+      
+      str_to_lower(
+        Status_POWO
+      ) == "synonym" ~
+        2L,
+      
+      TRUE ~
+        3L
+    )
+  ) %>%
+  
+  arrange(
+    
+    nome_powo_normalizado,
+    
+    desc(
+      possui_lifeform
+    ),
+    
+    prioridade_status
+  ) %>%
+  
+  distinct(
+    nome_powo_normalizado,
+    .keep_all = TRUE
+  ) %>%
+  
+  select(
+    -possui_lifeform,
+    -prioridade_status
+  )
+
+
+# ============================================================
+# 21. JUNTAR POWO AO RESULTADO DO REFLORA
+# ============================================================
+
+resultado_final <- resultado_reflora %>%
+  
+  left_join(
+    
+    base_powo,
+    
+    by = c(
+      "nome_busca_powo" =
+        "nome_powo_normalizado"
+    )
+  )
+
+
+# ============================================================
+# 22. CRIAR FORMA DE VIDA FINAL
+# ============================================================
+
+resultado_final <- resultado_final %>%
+  
+  mutate(
+    
+    LifeForm_FINAL = coalesce(
+      LifeForm_REFLORA,
+      LifeForm_POWO
+    ),
+    
+    
+    Fonte_LifeForm = case_when(
+      
+      !is.na(
+        LifeForm_REFLORA
+      ) ~
+        "REFLORA",
+      
+      is.na(
+        LifeForm_REFLORA
+      ) &
+        !is.na(
+          LifeForm_POWO
+        ) ~
+        "POWO/WCVP",
+      
+      TRUE ~
+        "Sem informação"
+    )
+  )
+
+
+# ============================================================
+# 23. CONFERIR SE O REFLORA FOI PRESERVADO
+# ============================================================
+
+problemas_sobrescrita <- resultado_final %>%
+  
+  filter(
+    
+    !is.na(
+      LifeForm_REFLORA
+    ),
+    
+    LifeForm_FINAL !=
+      LifeForm_REFLORA
+  )
+
+
+if (nrow(problemas_sobrescrita) > 0) {
+  
+  stop(
+    paste0(
+      "ATENÇÃO: houve alteração de valores ",
+      "originalmente preenchidos pelo REFLORA."
+    )
+  )
+}
+
+
+# ============================================================
+# 24. IDENTIFICAR ESPÉCIES COMPLEMENTADAS PELO POWO
+# ============================================================
+
+complementadas_powo <- resultado_final %>%
+  
+  filter(
+    
+    is.na(
+      LifeForm_REFLORA
+    ),
+    
+    !is.na(
+      LifeForm_POWO
+    )
+  ) %>%
+  
+  select(
+    
+    especie,
+    
+    LifeForm_REFLORA,
+    
+    Nome_POWO,
+    
+    Status_POWO,
+    
+    LifeForm_POWO_original,
+    
+    LifeForm_POWO,
+    
+    LifeForm_FINAL,
+    
+    Fonte_LifeForm
+  ) %>%
+  
+  arrange(
+    especie
+  )
+
+
+# ============================================================
+# 25. IDENTIFICAR ESPÉCIES AINDA SEM FORMA DE VIDA
+# ============================================================
+
+ainda_sem_lifeform <- resultado_final %>%
+  
+  filter(
+    is.na(
+      LifeForm_FINAL
+    )
+  ) %>%
+  
+  select(
+    
+    especie,
+    
+    Nome_POWO,
+    
+    Status_POWO,
+    
+    LifeForm_POWO_original
+  ) %>%
+  
+  arrange(
+    especie
+  )
+
+
+# ============================================================
+# 26. IDENTIFICAR TERMOS DO POWO QUE NÃO FORAM TRADUZIDOS
+# ============================================================
+
+# Muito importante:
+#
+# Se o POWO possuir um lifeform, mas nossa função de tradução
+# não reconhecer o termo, ele aparecerá aqui.
+
+termos_nao_traduzidos <- resultado_final %>%
+  
+  filter(
+    
+    is.na(
+      LifeForm_REFLORA
+    ),
+    
+    !is.na(
+      LifeForm_POWO_original
+    ),
+    
+    is.na(
+      LifeForm_POWO
+    )
+  ) %>%
+  
+  distinct(
+    LifeForm_POWO_original
+  ) %>%
+  
+  arrange(
+    LifeForm_POWO_original
+  )
+
+
+# ============================================================
+# 27. RESUMO
+# ============================================================
+
+resumo <- data.frame(
+  
+  Indicador = c(
+    
+    "Total de espécies",
+    
+    "Com LifeForm no REFLORA",
+    
+    "Sem LifeForm no REFLORA",
+    
+    "Complementadas pelo POWO",
+    
+    "Ainda sem LifeForm",
+    
+    "Termos POWO não traduzidos",
+    
+    "Total com LifeForm final"
+  ),
+  
+  Quantidade = c(
+    
+    nrow(
+      resultado_final
+    ),
+    
+    sum(
+      !is.na(
+        resultado_final$LifeForm_REFLORA
+      )
+    ),
+    
+    sum(
+      is.na(
+        resultado_final$LifeForm_REFLORA
+      )
+    ),
+    
+    nrow(
+      complementadas_powo
+    ),
+    
+    nrow(
+      ainda_sem_lifeform
+    ),
+    
+    nrow(
+      termos_nao_traduzidos
+    ),
+    
+    sum(
+      !is.na(
+        resultado_final$LifeForm_FINAL
+      )
+    )
+  ),
+  
+  stringsAsFactors = FALSE
+)
+
+
+# ============================================================
+# 28. MOSTRAR RESUMO
+# ============================================================
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "COMPLEMENTAÇÃO DE FORMA DE VIDA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+print(
+  resumo
+)
+
+cat(
+  "============================================\n"
+)
+
+
+# ============================================================
+# 29. CRIAR EXCEL FINAL
+# ============================================================
+
+wb <- createWorkbook()
+
+
+# ------------------------------------------------------------
+# Resultado completo
+# ------------------------------------------------------------
+
+addWorksheet(
+  wb,
+  "Resultado_completo"
+)
+
+writeDataTable(
+  wb,
+  "Resultado_completo",
+  resultado_final,
+  tableStyle = "TableStyleMedium2"
+)
+
+freezePane(
+  wb,
+  "Resultado_completo",
+  firstRow = TRUE
+)
+
+
+# ------------------------------------------------------------
+# Resumo
+# ------------------------------------------------------------
+
+addWorksheet(
+  wb,
+  "Resumo"
+)
+
+writeDataTable(
+  wb,
+  "Resumo",
+  resumo,
+  tableStyle = "TableStyleMedium4"
+)
+
+
+# ------------------------------------------------------------
+# Complementadas pelo POWO
+# ------------------------------------------------------------
+
+addWorksheet(
+  wb,
+  "Complementadas_POWO"
+)
+
+if (nrow(complementadas_powo) > 0) {
+  
+  writeDataTable(
+    wb,
+    "Complementadas_POWO",
+    complementadas_powo,
+    tableStyle = "TableStyleMedium3"
+  )
+  
+} else {
+  
+  writeData(
+    wb,
+    "Complementadas_POWO",
+    "Nenhuma espécie foi complementada pelo POWO."
+  )
+}
+
+
+# ------------------------------------------------------------
+# Ainda sem forma de vida
+# ------------------------------------------------------------
+
+addWorksheet(
+  wb,
+  "Ainda_sem_LifeForm"
+)
+
+if (nrow(ainda_sem_lifeform) > 0) {
+  
+  writeDataTable(
+    wb,
+    "Ainda_sem_LifeForm",
+    ainda_sem_lifeform,
+    tableStyle = "TableStyleMedium6"
+  )
+  
+} else {
+  
+  writeData(
+    wb,
+    "Ainda_sem_LifeForm",
+    "Todas as espécies possuem forma de vida."
+  )
+}
+
+
+# ------------------------------------------------------------
+# Termos que a tradução não reconheceu
+# ------------------------------------------------------------
+
+addWorksheet(
+  wb,
+  "Termos_nao_traduzidos"
+)
+
+if (nrow(termos_nao_traduzidos) > 0) {
+  
+  writeDataTable(
+    wb,
+    "Termos_nao_traduzidos",
+    termos_nao_traduzidos,
+    tableStyle = "TableStyleMedium9"
+  )
+  
+} else {
+  
+  writeData(
+    wb,
+    "Termos_nao_traduzidos",
+    "Todos os termos encontrados no POWO foram traduzidos."
+  )
+}
+
+
+# ============================================================
+# 30. AJUSTAR LARGURA DAS COLUNAS
+# ============================================================
+
+for (aba in names(wb)) {
+  
+  numero_colunas <- ncol(
+    switch(
+      aba,
+      
+      "Resultado_completo" =
+        resultado_final,
+      
+      "Resumo" =
+        resumo,
+      
+      "Complementadas_POWO" =
+        complementadas_powo,
+      
+      "Ainda_sem_LifeForm" =
+        ainda_sem_lifeform,
+      
+      "Termos_nao_traduzidos" =
+        termos_nao_traduzidos
+    )
+  )
+  
+  if (
+    !is.null(numero_colunas) &&
+      numero_colunas > 0
+  ) {
+    
+    setColWidths(
+      wb,
+      aba,
+      cols = 1:numero_colunas,
+      widths = "auto"
+    )
+  }
+}
+
+
+# ============================================================
+# 31. SALVAR
+# ============================================================
+
+saveWorkbook(
+  wb,
+  arquivo_saida,
+  overwrite = TRUE
+)
+
+
+# ============================================================
+# 32. MENSAGEM FINAL
+# ============================================================
+
+cat(
+  "\nArquivo criado em:\n",
+  arquivo_saida,
+  "\n"
+)
+
+cat(
+  "\nProcessamento concluído.\n"
+)
