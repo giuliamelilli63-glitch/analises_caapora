@@ -1,0 +1,241 @@
+# ============================================================
+# PROJETO CAAPORÃ
+# VARIÁVEIS TOPOGRÁFICAS
+#
+# ETAPA 2 - DERIVADOS DO HYDROSHEDS 30s
+#
+# Objetivo:
+# Gerar:
+# - slope
+# - aspect
+# - TPI
+# - TRI
+# - roughness
+# ============================================================
+
+
+library(terra)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_base <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/topografia/HydroSHEDS"
+)
+
+arquivo_dem <- file.path(
+  pasta_base,
+  "04_brasil_30s",
+  "HydroSHEDS_CONDEM_30s_Brasil.tif"
+)
+
+pasta_derivados <- file.path(
+  pasta_base,
+  "05_derivados_topograficos"
+)
+
+dir.create(
+  pasta_derivados,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. Ler DEM
+# ------------------------------------------------------------
+
+dem <- rast(
+  arquivo_dem
+)
+
+names(dem) <- "elevation"
+
+print(dem)
+
+
+# ------------------------------------------------------------
+# 3. Declividade
+# ------------------------------------------------------------
+
+slope <- terrain(
+  dem,
+  v = "slope",
+  unit = "degrees"
+)
+
+names(slope) <- "slope"
+
+writeRaster(
+  slope,
+  file.path(
+    pasta_derivados,
+    "HydroSHEDS_slope_30s_Brasil.tif"
+  ),
+  overwrite = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 4. Aspecto
+# ------------------------------------------------------------
+
+aspect <- terrain(
+  dem,
+  v = "aspect",
+  unit = "degrees"
+)
+
+names(aspect) <- "aspect"
+
+writeRaster(
+  aspect,
+  file.path(
+    pasta_derivados,
+    "HydroSHEDS_aspect_30s_Brasil.tif"
+  ),
+  overwrite = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 5. TPI
+# ------------------------------------------------------------
+
+tpi <- terrain(
+  dem,
+  v = "TPI"
+)
+
+names(tpi) <- "TPI"
+
+writeRaster(
+  tpi,
+  file.path(
+    pasta_derivados,
+    "HydroSHEDS_TPI_30s_Brasil.tif"
+  ),
+  overwrite = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 6. TRI
+# ------------------------------------------------------------
+
+tri <- terrain(
+  dem,
+  v = "TRI"
+)
+
+names(tri) <- "TRI"
+
+writeRaster(
+  tri,
+  file.path(
+    pasta_derivados,
+    "HydroSHEDS_TRI_30s_Brasil.tif"
+  ),
+  overwrite = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 7. Roughness
+# ------------------------------------------------------------
+
+roughness <- terrain(
+  dem,
+  v = "roughness"
+)
+
+names(roughness) <- "roughness"
+
+writeRaster(
+  roughness,
+  file.path(
+    pasta_derivados,
+    "HydroSHEDS_roughness_30s_Brasil.tif"
+  ),
+  overwrite = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 8. Juntar variáveis
+# ------------------------------------------------------------
+
+topografia <- c(
+  dem,
+  slope,
+  aspect,
+  tpi,
+  tri,
+  roughness
+)
+
+names(topografia) <- c(
+  "elevation",
+  "slope",
+  "aspect",
+  "TPI",
+  "TRI",
+  "roughness"
+)
+
+
+# ------------------------------------------------------------
+# 9. Conferência
+# ------------------------------------------------------------
+
+print(topografia)
+
+cat("\nNomes:\n")
+print(names(topografia))
+
+cat("\nResolução:\n")
+print(res(topografia))
+
+cat("\nCRS:\n")
+print(crs(topografia))
+
+cat("\nMínimos e máximos:\n")
+print(minmax(topografia))
+
+
+# ------------------------------------------------------------
+# 10. Visualização rápida
+# ------------------------------------------------------------
+
+plot(
+  slope,
+  main = "Slope - HydroSHEDS 30s"
+)
+
+plot(
+  tpi,
+  main = "TPI - HydroSHEDS 30s"
+)
+
+plot(
+  roughness,
+  main = "Roughness - HydroSHEDS 30s"
+)
+
+
+# ------------------------------------------------------------
+# 11. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DERIVADOS TOPOGRÁFICOS CONCLUÍDOS\n",
+  "========================================\n",
+  "\nPasta:\n",
+  pasta_derivados,
+  "\n",
+  sep = ""
+)
