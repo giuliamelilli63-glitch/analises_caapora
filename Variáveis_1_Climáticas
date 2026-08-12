@@ -1,6 +1,17 @@
 # ============================================================
-# CHELSA BIOCLIM v2.1
-# Download BIO1-BIO19 + recorte para o Brasil
+# PROJETO CAAPORÃ
+# VARIÁVEIS CLIMÁTICAS - CHELSA BIO1-BIO19
+#
+# Objetivos:
+# 1. Baixar novamente BIO1-BIO19 do CHELSA v2.1
+# 2. Conferir se todos os arquivos são válidos
+# 3. Recortar cada BIO individualmente para o Brasil
+# 4. Salvar os 19 rasters recortados
+# 5. Criar um SpatRaster final BIO1-BIO19
+#
+# CHELSA v2.1
+# Climatologia: 1981-2010
+# Resolução: ~1 km / 30 arc-seconds
 # ============================================================
 
 
@@ -13,7 +24,9 @@ pacotes <- c(
   "geodata"
 )
 
-instalar <- pacotes[!pacotes %in% installed.packages()[, "Package"]]
+instalar <- pacotes[
+  !pacotes %in% installed.packages()[, "Package"]
+]
 
 if (length(instalar) > 0) {
   install.packages(instalar)
@@ -42,6 +55,11 @@ pasta_brasil <- file.path(
   "02_recortado_brasil"
 )
 
+pasta_limite <- file.path(
+  pasta_base,
+  "limite_brasil"
+)
+
 dir.create(
   pasta_bruto,
   recursive = TRUE,
@@ -54,140 +72,64 @@ dir.create(
   showWarnings = FALSE
 )
 
+dir.create(
+  pasta_limite,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
 
 # ------------------------------------------------------------
-# 2. Informações da versão que estamos utilizando
+# 2. Pasta temporária do terra
+# ------------------------------------------------------------
+#
+# IMPORTANTE:
+# Evitar OneDrive para arquivos temporários grandes.
+# ------------------------------------------------------------
+
+pasta_temp <- "C:/temp_terra"
+
+dir.create(
+  pasta_temp,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+terraOptions(
+  tempdir = pasta_temp,
+  memfrac = 0.6,
+  progress = 1
+)
+
+terraOptions()
+
+
+# ------------------------------------------------------------
+# 3. Informações do CHELSA
 # ------------------------------------------------------------
 
 versao_chelsa <- "2.1"
-
 periodo_chelsa <- "1981-2010"
 
 cat(
   "\n========================================\n",
-  "CHELSA utilizado neste script\n",
+  "CHELSA BIOCLIM\n",
   "========================================\n",
   "Versão: ", versao_chelsa, "\n",
   "Período: ", periodo_chelsa, "\n",
-  "Produto: CHELSA-Bioclim\n",
-  "Variáveis: BIO1-BIO19\n",
-  "Resolução: ~1 km (30 arc-seconds)\n",
+  "BIO1-BIO19\n",
   "========================================\n\n",
   sep = ""
 )
 
 
 # ------------------------------------------------------------
-# 3. Função para verificar a versão atual do CHELSA
+# 4. Criar nomes dos arquivos
 # ------------------------------------------------------------
-
-verificar_versao_chelsa <- function() {
-  
-  pagina <- "https://www.chelsa-climate.org/datasets/chelsa_bioclim"
-  
-  cat(
-    "\nConsultando página oficial do CHELSA...\n"
-  )
-  
-  resultado <- tryCatch(
-    
-    {
-      
-      texto <- readLines(
-        pagina,
-        warn = FALSE
-      )
-      
-      texto <- paste(
-        texto,
-        collapse = " "
-      )
-      
-      versoes <- regmatches(
-        texto,
-        gregexpr(
-          "Version[^0-9]*[0-9]+\\.[0-9]+",
-          texto,
-          ignore.case = TRUE
-        )
-      )[[1]]
-      
-      if (length(versoes) == 0) {
-        
-        cat(
-          "Não foi possível identificar automaticamente",
-          " a versão no site.\n"
-        )
-        
-        cat(
-          "Confira manualmente:\n",
-          pagina,
-          "\n"
-        )
-        
-      } else {
-        
-        cat(
-          "\nInformação encontrada no site oficial:\n"
-        )
-        
-        print(
-          unique(versoes)
-        )
-        
-        cat(
-          "\nVersão definida no script:",
-          versao_chelsa,
-          "\n"
-        )
-        
-      }
-      
-    },
-    
-    error = function(e) {
-      
-      cat(
-        "\nNão foi possível acessar o site automaticamente.\n"
-      )
-      
-      cat(
-        "Isso pode ocorrer por bloqueio da conexão do R.\n"
-      )
-      
-      cat(
-        "Confira manualmente:\n",
-        pagina,
-        "\n"
-      )
-      
-    }
-    
-  )
-  
-  invisible(resultado)
-}
-
-
-# Rodar a verificação
-
-verificar_versao_chelsa()
-
-
-# ------------------------------------------------------------
-# 4. URLs dos BIO1-BIO19
-# ------------------------------------------------------------
-
-url_base <- paste0(
-  "https://os.zhdk.cloud.switch.ch/",
-  "chelsav2/GLOBAL/climatologies/",
-  periodo_chelsa,
-  "/bio/"
-)
 
 bios <- 1:19
 
-arquivos <- paste0(
+nomes_arquivos <- paste0(
   "CHELSA_bio",
   bios,
   "_",
@@ -197,217 +139,402 @@ arquivos <- paste0(
   ".tif"
 )
 
+
+# ------------------------------------------------------------
+# 5. URLs
+# ------------------------------------------------------------
+
+url_base <- paste0(
+  "https://os.zhdk.cloud.switch.ch/",
+  "chelsav2/GLOBAL/climatologies/",
+  periodo_chelsa,
+  "/bio/"
+)
+
 urls <- paste0(
   url_base,
-  arquivos
+  nomes_arquivos
 )
-
-
-# Conferir os links
-
-tabela_download <- data.frame(
-  bio = paste0("BIO", bios),
-  arquivo = arquivos,
-  url = urls
-)
-
-print(tabela_download)
 
 
 # ------------------------------------------------------------
-# 5. Baixar BIO1-BIO19
+# 6. Arquivos de destino
+# ------------------------------------------------------------
+
+arquivos_globais <- file.path(
+  pasta_bruto,
+  nomes_arquivos
+)
+
+
+# ------------------------------------------------------------
+# 7. OPCIONAL: apagar downloads antigos
+# ------------------------------------------------------------
+#
+# Descomente APENAS quando quiser realmente baixar tudo
+# novamente desde o começo.
+# ------------------------------------------------------------
+
+# file.remove(
+#   arquivos_globais[file.exists(arquivos_globais)]
+# )
+
+
+# Também pode apagar os recortes antigos:
+
+# unlink(
+#   pasta_brasil,
+#   recursive = TRUE
+# )
+
+# dir.create(
+#   pasta_brasil,
+#   recursive = TRUE,
+#   showWarnings = FALSE
+# )
+
+
+# ------------------------------------------------------------
+# 8. Baixar BIO1-BIO19
 # ------------------------------------------------------------
 
 cat(
   "\n========================================\n",
-  "INICIANDO DOWNLOAD\n",
+  "INICIANDO DOWNLOAD BIO1-BIO19\n",
   "========================================\n"
 )
 
-for (i in seq_along(urls)) {
+for (i in 1:19) {
   
-  destino <- file.path(
-    pasta_bruto,
-    arquivos[i]
+  destino <- arquivos_globais[i]
+  
+  cat(
+    "\n----------------------------------------\n",
+    "BIO", i, " de 19\n",
+    "----------------------------------------\n",
+    sep = ""
   )
   
   if (file.exists(destino)) {
     
     cat(
-      paste0(
-        "BIO",
-        bios[i],
-        " já existe. Pulando download.\n"
-      )
+      "Arquivo já existe:",
+      basename(destino),
+      "\n"
     )
     
   } else {
     
     cat(
-      paste0(
-        "\nBaixando BIO",
-        bios[i],
-        "...\n"
-      )
+      "Baixando:",
+      basename(destino),
+      "\n"
     )
     
-    tryCatch(
-      
-      {
-        
-        download.file(
-          url = urls[i],
-          destfile = destino,
-          mode = "wb",
-          method = "libcurl",
-          quiet = FALSE
-        )
-        
-      },
-      
-      error = function(e) {
-        
-        cat(
-          paste0(
-            "\nERRO no download do BIO",
-            bios[i],
-            "\n"
-          )
-        )
-        
-        print(e)
-        
-      }
-      
+    download.file(
+      url = urls[i],
+      destfile = destino,
+      mode = "wb",
+      method = "libcurl",
+      quiet = FALSE
     )
     
   }
+  
 }
 
 
 # ------------------------------------------------------------
-# 6. Conferir downloads
+# 9. Conferir se os 19 arquivos existem
 # ------------------------------------------------------------
 
-arquivos_baixados <- list.files(
-  pasta_bruto,
-  pattern = "\\.tif$",
-  full.names = TRUE
+existem <- file.exists(
+  arquivos_globais
 )
 
 cat(
   "\n========================================\n",
-  "DOWNLOAD CONCLUÍDO\n",
-  "========================================\n",
-  "Arquivos encontrados: ",
-  length(arquivos_baixados),
-  "\n",
-  sep = ""
+  "ARQUIVOS ENCONTRADOS\n",
+  "========================================\n"
 )
 
 print(
-  basename(arquivos_baixados)
+  data.frame(
+    BIO = paste0("BIO", 1:19),
+    existe = existem
+  )
 )
 
-
-if (length(arquivos_baixados) != 19) {
+if (!all(existem)) {
   
-  warning(
-    "Não foram encontrados exatamente 19 arquivos."
+  stop(
+    "Nem todos os arquivos foram baixados."
   )
   
 }
 
 
 # ------------------------------------------------------------
-# 7. Baixar limite do Brasil
+# 10. Conferência individual dos arquivos
+# ------------------------------------------------------------
+#
+# Aqui conferimos:
+# - tamanho
+# - extensão
+# - resolução
+# - CRS
+#
+# ------------------------------------------------------------
+
+resultado_teste <- data.frame(
+  BIO = paste0("BIO", 1:19),
+  arquivo = basename(arquivos_globais),
+  tamanho_MB = NA_real_,
+  valido = FALSE,
+  xmin = NA_real_,
+  xmax = NA_real_,
+  ymin = NA_real_,
+  ymax = NA_real_,
+  res_x = NA_real_,
+  res_y = NA_real_
+)
+
+
+for (i in 1:19) {
+  
+  arquivo <- arquivos_globais[i]
+  
+  resultado_teste$tamanho_MB[i] <-
+    file.info(arquivo)$size / 1024^2
+  
+  teste <- tryCatch({
+    
+    r <- rast(
+      arquivo
+    )
+    
+    e <- ext(
+      r
+    )
+    
+    resultado_teste$valido[i] <- TRUE
+    
+    resultado_teste$xmin[i] <- xmin(e)
+    resultado_teste$xmax[i] <- xmax(e)
+    
+    resultado_teste$ymin[i] <- ymin(e)
+    resultado_teste$ymax[i] <- ymax(e)
+    
+    resultado_teste$res_x[i] <- res(r)[1]
+    resultado_teste$res_y[i] <- res(r)[2]
+    
+    TRUE
+    
+  }, error = function(e) {
+    
+    cat(
+      "\nERRO em BIO",
+      i,
+      ":\n",
+      conditionMessage(e),
+      "\n"
+    )
+    
+    FALSE
+    
+  })
+  
+}
+
+
+print(
+  resultado_teste
+)
+
+
+# ------------------------------------------------------------
+# 11. Conferir geometria esperada
+# ------------------------------------------------------------
+
+resultado_teste$geometria_ok <-
+  resultado_teste$valido &
+  abs(resultado_teste$res_x - 0.008333333) < 0.000001 &
+  abs(resultado_teste$res_y - 0.008333333) < 0.000001 &
+  resultado_teste$xmin < -179 &
+  resultado_teste$xmax > 179 &
+  resultado_teste$ymin < -89 &
+  resultado_teste$ymax > 83
+
+
+print(
+  resultado_teste[
+    ,
+    c(
+      "BIO",
+      "tamanho_MB",
+      "valido",
+      "geometria_ok"
+    )
+  ]
+)
+
+
+if (!all(resultado_teste$geometria_ok)) {
+  
+  cat(
+    "\nATENÇÃO:\n",
+    "Existem arquivos com geometria inesperada.\n"
+  )
+  
+  print(
+    resultado_teste[
+      !resultado_teste$geometria_ok,
+    ]
+  )
+  
+  stop(
+    "Corrija os arquivos problemáticos antes de continuar."
+  )
+  
+}
+
+
+# ------------------------------------------------------------
+# 12. Baixar limite do Brasil
 # ------------------------------------------------------------
 
 cat(
-  "\nBaixando limite territorial do Brasil...\n"
+  "\nBaixando/carregando limite do Brasil...\n"
 )
 
 brasil <- geodata::gadm(
   country = "BRA",
   level = 0,
-  path = file.path(
-    pasta_base,
-    "limite_brasil"
-  )
-)
-
-
-# Conferir
-
-plot(brasil)
-
-
-# ------------------------------------------------------------
-# 8. Ler os rasters CHELSA
-# ------------------------------------------------------------
-
-chelsa_global <- rast(
-  arquivos_baixados
-)
-
-
-# Renomear as camadas
-
-names(chelsa_global) <- paste0(
-  "bio",
-  1:19
+  path = pasta_limite
 )
 
 
 # ------------------------------------------------------------
-# 9. Conferir propriedades espaciais
+# 13. Usar BIO1 como referência espacial
+# ------------------------------------------------------------
+
+bio_referencia <- rast(
+  arquivos_globais[1]
+)
+
+brasil_chelsa <- project(
+  brasil,
+  crs(bio_referencia)
+)
+
+
+# ------------------------------------------------------------
+# 14. Extensão aproximada do Brasil para teste de leitura
+# ------------------------------------------------------------
+#
+# Esse teste força a leitura dos pixels do GeoTIFF.
+# Assim conseguimos detectar arquivos parcialmente
+# corrompidos antes do processamento completo.
+# ------------------------------------------------------------
+
+ext_teste <- ext(
+  -75,
+  -30,
+  -35,
+  6
+)
+
+
+# ------------------------------------------------------------
+# 15. Testar leitura real dos 19 arquivos
 # ------------------------------------------------------------
 
 cat(
   "\n========================================\n",
-  "PROPRIEDADES DOS RASTERS ORIGINAIS\n",
+  "TESTANDO LEITURA DOS RASTERS\n",
   "========================================\n"
 )
 
-print(chelsa_global)
+leitura_ok <- logical(
+  19
+)
 
-cat(
-  "\nCRS:\n"
+for (i in 1:19) {
+  
+  cat(
+    "Testando BIO",
+    i,
+    "...\n"
+  )
+  
+  leitura_ok[i] <- tryCatch({
+    
+    r <- rast(
+      arquivos_globais[i]
+    )
+    
+    teste <- crop(
+      r,
+      ext_teste
+    )
+    
+    # Forçar leitura dos valores
+    global(
+      teste,
+      "mean",
+      na.rm = TRUE
+    )
+    
+    TRUE
+    
+  }, error = function(e) {
+    
+    cat(
+      "ERRO BIO",
+      i,
+      ":",
+      conditionMessage(e),
+      "\n"
+    )
+    
+    FALSE
+    
+  })
+  
+}
+
+
+teste_leitura <- data.frame(
+  BIO = paste0("BIO", 1:19),
+  leitura_ok = leitura_ok
 )
 
 print(
-  crs(chelsa_global)
+  teste_leitura
 )
 
-cat(
-  "\nResolução:\n"
-)
 
-print(
-  res(chelsa_global)
-)
-
-cat(
-  "\nExtensão:\n"
-)
-
-print(
-  ext(chelsa_global)
-)
+if (!all(leitura_ok)) {
+  
+  cat(
+    "\nArquivos problemáticos:\n"
+  )
+  
+  print(
+    teste_leitura[
+      !teste_leitura$leitura_ok,
+    ]
+  )
+  
+  stop(
+    "Alguns arquivos parecem corrompidos. Baixe-os novamente."
+  )
+  
+}
 
 
 # ------------------------------------------------------------
-# 10. Garantir mesmo CRS entre Brasil e CHELSA
-# ------------------------------------------------------------
-
-brasil <- project(
-  brasil,
-  crs(chelsa_global)
-)
-
-
-# ------------------------------------------------------------
-# 11. Recortar para o Brasil
+# 16. Recortar BIO1-BIO19 individualmente
 # ------------------------------------------------------------
 
 cat(
@@ -416,28 +543,20 @@ cat(
   "========================================\n"
 )
 
-
-chelsa_crop <- crop(
-  chelsa_global,
-  brasil
-)
+falhas <- integer()
 
 
-# ------------------------------------------------------------
-# 12. Remover pixels fora do Brasil
-# ------------------------------------------------------------
-
-chelsa_brasil <- mask(
-  chelsa_crop,
-  brasil
-)
-
-
-# ------------------------------------------------------------
-# 13. Salvar cada BIO separadamente
-# ------------------------------------------------------------
-
-for (i in 1:nlyr(chelsa_brasil)) {
+for (i in 1:19) {
+  
+  cat(
+    "\n----------------------------------------\n",
+    "Processando BIO",
+    i,
+    " de 19\n",
+    "----------------------------------------\n",
+    sep = ""
+  )
+  
   
   arquivo_saida <- file.path(
     pasta_brasil,
@@ -452,49 +571,192 @@ for (i in 1:nlyr(chelsa_brasil)) {
     )
   )
   
-  writeRaster(
-    chelsa_brasil[[i]],
-    arquivo_saida,
-    overwrite = TRUE
+  
+  resultado <- tryCatch({
+    
+    bio <- rast(
+      arquivos_globais[i]
+    )
+    
+    names(bio) <- paste0(
+      "bio",
+      i
+    )
+    
+    
+    # Recortar pela extensão
+    
+    bio_crop <- crop(
+      bio,
+      brasil_chelsa
+    )
+    
+    
+    # Aplicar máscara
+    
+    bio_brasil <- mask(
+      bio_crop,
+      brasil_chelsa
+    )
+    
+    
+    # Salvar
+    
+    writeRaster(
+      bio_brasil,
+      arquivo_saida,
+      overwrite = TRUE,
+      gdal = c(
+        "COMPRESS=DEFLATE",
+        "PREDICTOR=2"
+      )
+    )
+    
+    
+    cat(
+      "Salvo:",
+      basename(arquivo_saida),
+      "\n"
+    )
+    
+    
+    rm(
+      bio,
+      bio_crop,
+      bio_brasil
+    )
+    
+    gc()
+    
+    TRUE
+    
+  }, error = function(e) {
+    
+    cat(
+      "\nERRO NO BIO",
+      i,
+      ":\n",
+      conditionMessage(e),
+      "\n"
+    )
+    
+    FALSE
+    
+  })
+  
+  
+  if (!resultado) {
+    
+    falhas <- c(
+      falhas,
+      i
+    )
+    
+  }
+  
+}
+
+
+# ------------------------------------------------------------
+# 17. Conferir falhas
+# ------------------------------------------------------------
+
+if (length(falhas) > 0) {
+  
+  cat(
+    "\n========================================\n",
+    "ATENÇÃO\n",
+    "========================================\n",
+    "BIOs que falharam:",
+    paste(
+      falhas,
+      collapse = ", "
+    ),
+    "\n"
+  )
+  
+} else {
+  
+  cat(
+    "\nTodos os BIOs foram recortados com sucesso.\n"
   )
   
 }
 
 
 # ------------------------------------------------------------
-# 14. Salvar também todos juntos
+# 18. Criar lista dos arquivos recortados
 # ------------------------------------------------------------
 
-writeRaster(
-  chelsa_brasil,
-  file.path(
-    pasta_brasil,
-    paste0(
-      "CHELSA_BIO1-19_Brasil_",
-      periodo_chelsa,
-      "_V",
-      versao_chelsa,
-      ".tif"
-    )
-  ),
-  overwrite = TRUE
+arquivos_brasil <- file.path(
+  pasta_brasil,
+  paste0(
+    "CHELSA_bio",
+    1:19,
+    "_Brasil_",
+    periodo_chelsa,
+    "_V",
+    versao_chelsa,
+    ".tif"
+  )
 )
 
 
 # ------------------------------------------------------------
-# 15. Conferência final
+# 19. Conferir arquivos recortados
+# ------------------------------------------------------------
+
+existem_brasil <- file.exists(
+  arquivos_brasil
+)
+
+print(
+  data.frame(
+    BIO = paste0("BIO", 1:19),
+    arquivo_recortado = existem_brasil
+  )
+)
+
+
+if (!all(existem_brasil)) {
+  
+  stop(
+    "Nem todos os BIOs foram recortados."
+  )
+  
+}
+
+
+# ------------------------------------------------------------
+# 20. Criar SpatRaster final BIO1-BIO19
+# ------------------------------------------------------------
+
+chelsa_brasil <- rast(
+  arquivos_brasil
+)
+
+names(chelsa_brasil) <- paste0(
+  "bio",
+  1:19
+)
+
+
+# ------------------------------------------------------------
+# 21. Conferência final
 # ------------------------------------------------------------
 
 cat(
   "\n========================================\n",
-  "CHECAGEM FINAL\n",
+  "CHELSA BRASIL - RESULTADO FINAL\n",
   "========================================\n"
 )
 
-print(chelsa_brasil)
+print(
+  chelsa_brasil
+)
 
 cat(
-  "\nNúmero de variáveis:",
+  "\nNúmero de camadas:",
   nlyr(chelsa_brasil),
   "\n"
 )
@@ -533,50 +795,65 @@ print(
 
 
 # ------------------------------------------------------------
-# 16. Valores mínimo e máximo de cada variável
+# 22. Valores mínimos e máximos
 # ------------------------------------------------------------
 
 cat(
-  "\n========================================\n",
-  "MÍNIMOS E MÁXIMOS\n",
-  "========================================\n"
+  "\nMínimos e máximos:\n"
 )
 
 print(
-  minmax(chelsa_brasil)
+  minmax(
+    chelsa_brasil
+  )
 )
 
 
 # ------------------------------------------------------------
-# 17. Visualização rápida
+# 23. Visualizar BIO1
 # ------------------------------------------------------------
 
 plot(
   chelsa_brasil[[1]],
-  main = "CHELSA BIO1 - Brasil"
+  main = "CHELSA BIO1 - Temperatura média anual"
 )
 
 lines(
-  brasil,
+  brasil_chelsa,
   lwd = 0.5
 )
 
 
 # ------------------------------------------------------------
-# 18. Resultado
+# 24. Salvar tabela de controle
+# ------------------------------------------------------------
+
+write.csv2(
+  resultado_teste,
+  file.path(
+    pasta_base,
+    "controle_download_CHELSA.csv"
+  ),
+  row.names = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 25. Resultado final
 # ------------------------------------------------------------
 
 cat(
   "\n========================================\n",
   "PROCESSAMENTO CONCLUÍDO\n",
   "========================================\n",
-  "CHELSA: V", versao_chelsa, "\n",
-  "Período: ", periodo_chelsa, "\n",
-  "BIOs: 1-19\n",
-  "Arquivos globais:\n",
+  "\nCHELSA v", versao_chelsa,
+  "\nPeríodo: ", periodo_chelsa,
+  "\nBIO1-BIO19",
+  "\n\nArquivos globais:\n",
   pasta_bruto,
-  "\n\nArquivos recortados:\n",
+  "\n\nArquivos Brasil:\n",
   pasta_brasil,
   "\n",
   sep = ""
 )
+
