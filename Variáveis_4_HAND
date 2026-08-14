@@ -1,0 +1,470 @@
+# ------------------------------------------------------------
+# HAND - AMBDATA
+# Criar pasta para o arquivo original
+# ------------------------------------------------------------
+
+pasta_hand <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/hidrologia/HAND_AMBDATA/01_bruto"
+)
+
+dir.create(
+  pasta_hand,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+# Abrir a pasta no Windows
+shell.exec(
+  normalizePath(pasta_hand)
+)
+# ------------------------------------------------------------
+# Conferir arquivos
+# ------------------------------------------------------------
+
+arquivos_hand <- list.files(
+  pasta_hand,
+  full.names = TRUE
+)
+
+cat(
+  "\nNúmero de arquivos encontrados:",
+  length(arquivos_hand),
+  "\n\n"
+)
+
+print(
+  basename(arquivos_hand)
+)
+
+# ============================================================
+# HAND50 - AMBDATA / INPE
+# Descompactar e conferir
+# ============================================================
+
+library(terra)
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_base <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/hidrologia/HAND_AMBDATA"
+)
+
+pasta_bruto <- file.path(
+  pasta_base,
+  "01_bruto"
+)
+
+pasta_extraido <- file.path(
+  pasta_base,
+  "02_extraido"
+)
+
+dir.create(
+  pasta_extraido,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. Arquivo ZIP
+# ------------------------------------------------------------
+
+arquivo_zip <- file.path(
+  pasta_bruto,
+  "SAmerica_HAND50.zip"
+)
+
+if (!file.exists(arquivo_zip)) {
+  stop("O arquivo SAmerica_HAND50.zip não foi encontrado.")
+}
+
+
+# ------------------------------------------------------------
+# 3. Ver o conteúdo do ZIP
+# ------------------------------------------------------------
+
+conteudo_zip <- unzip(
+  arquivo_zip,
+  list = TRUE
+)
+
+print(
+  conteudo_zip
+)
+
+
+# ------------------------------------------------------------
+# 4. Descompactar
+# ------------------------------------------------------------
+
+unzip(
+  arquivo_zip,
+  exdir = pasta_extraido
+)
+
+cat(
+  "\nArquivo descompactado em:\n",
+  pasta_extraido,
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 5. Procurar arquivos raster
+# ------------------------------------------------------------
+
+arquivos_raster <- list.files(
+  pasta_extraido,
+  pattern = "\\.(tif|tiff|asc|img|grd)$",
+  full.names = TRUE,
+  recursive = TRUE,
+  ignore.case = TRUE
+)
+
+cat(
+  "\nNúmero de rasters encontrados:",
+  length(arquivos_raster),
+  "\n\n"
+)
+
+print(
+  basename(arquivos_raster)
+)
+
+
+# ------------------------------------------------------------
+# 6. Abrir raster
+# ------------------------------------------------------------
+
+if (length(arquivos_raster) == 0) {
+  stop("Nenhum raster foi encontrado após descompactar.")
+}
+
+hand50 <- rast(
+  arquivos_raster[1]
+)
+
+names(hand50) <- "HAND50"
+
+
+# ------------------------------------------------------------
+# 7. Conferir propriedades
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "HAND50 - AMÉRICA DO SUL\n",
+  "========================================\n"
+)
+
+print(
+  hand50
+)
+
+cat(
+  "\nResolução:\n"
+)
+
+print(
+  res(hand50)
+)
+
+cat(
+  "\nCRS:\n"
+)
+
+print(
+  crs(hand50)
+)
+
+cat(
+  "\nExtensão:\n"
+)
+
+print(
+  ext(hand50)
+)
+
+cat(
+  "\nMínimo e máximo:\n"
+)
+
+print(
+  minmax(hand50)
+)
+# ============================================================
+# PROJETO CAAPORÃ
+# HAND50 - AMBDATA
+#
+# ETAPA:
+# 1. Calcular mínimo e máximo
+# 2. Recortar para o Brasil
+# 3. Salvar como GeoTIFF
+# 4. Conferir resultado
+# ============================================================
+
+library(terra)
+library(geodata)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_base <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/hidrologia/HAND_AMBDATA"
+)
+
+pasta_extraido <- file.path(
+  pasta_base,
+  "02_extraido"
+)
+
+pasta_brasil <- file.path(
+  pasta_base,
+  "03_brasil"
+)
+
+pasta_limite <- file.path(
+  pasta_base,
+  "limite_brasil"
+)
+
+dir.create(
+  pasta_brasil,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  pasta_limite,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. Abrir HAND50
+# ------------------------------------------------------------
+
+arquivo_hand <- file.path(
+  pasta_extraido,
+  "SRTM_SouthAmerica_30seg_hand50.asc"
+)
+
+hand50 <- rast(
+  arquivo_hand
+)
+
+names(hand50) <- "HAND50"
+
+
+# ------------------------------------------------------------
+# 3. Calcular mínimo e máximo reais
+# ------------------------------------------------------------
+
+cat(
+  "\nCalculando mínimo e máximo do HAND...\n"
+)
+
+valores_hand <- global(
+  hand50,
+  fun = c("min", "max"),
+  na.rm = TRUE
+)
+
+print(
+  valores_hand
+)
+
+
+# ------------------------------------------------------------
+# 4. Limite do Brasil
+# ------------------------------------------------------------
+
+brasil <- geodata::gadm(
+  country = "BRA",
+  level = 0,
+  path = pasta_limite
+)
+
+print(
+  brasil
+)
+
+
+# ------------------------------------------------------------
+# 5. Ajustar CRS do limite
+# ------------------------------------------------------------
+
+brasil_hand <- project(
+  brasil,
+  crs(hand50)
+)
+
+
+# ------------------------------------------------------------
+# 6. Recortar pela extensão do Brasil
+# ------------------------------------------------------------
+
+cat(
+  "\nRecortando HAND50 para o Brasil...\n"
+)
+
+hand_crop <- crop(
+  hand50,
+  brasil_hand
+)
+
+
+# ------------------------------------------------------------
+# 7. Aplicar máscara
+# ------------------------------------------------------------
+
+arquivo_saida <- file.path(
+  pasta_brasil,
+  "AMBDATA_HAND50_30s_Brasil.tif"
+)
+
+hand_brasil <- mask(
+  hand_crop,
+  brasil_hand,
+  filename = arquivo_saida,
+  overwrite = TRUE,
+  gdal = c("COMPRESS=DEFLATE")
+)
+
+names(
+  hand_brasil
+) <- "HAND50"
+
+
+# ------------------------------------------------------------
+# 8. Conferência final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "HAND50 BRASIL\n",
+  "========================================\n"
+)
+
+print(
+  hand_brasil
+)
+
+cat(
+  "\nResolução:\n"
+)
+
+print(
+  res(hand_brasil)
+)
+
+cat(
+  "\nCRS:\n"
+)
+
+print(
+  crs(hand_brasil)
+)
+
+cat(
+  "\nExtensão:\n"
+)
+
+print(
+  ext(hand_brasil)
+)
+
+
+# ------------------------------------------------------------
+# 9. Mínimo, máximo e média
+# ------------------------------------------------------------
+
+cat(
+  "\nEstatísticas do HAND50 no Brasil:\n"
+)
+
+estatisticas <- global(
+  hand_brasil,
+  fun = c(
+    "min",
+    "max",
+    "mean"
+  ),
+  na.rm = TRUE
+)
+
+print(
+  estatisticas
+)
+
+
+# ------------------------------------------------------------
+# 10. Visualizar
+# ------------------------------------------------------------
+
+plot(
+  hand_brasil,
+  main = "HAND50 - AMBDATA - Brasil"
+)
+
+lines(
+  brasil_hand,
+  lwd = 0.5
+)
+
+
+# ------------------------------------------------------------
+# 11. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PROCESSAMENTO CONCLUÍDO\n",
+  "========================================\n",
+  "\nArquivo final:\n",
+  arquivo_saida,
+  "\n",
+  sep = ""
+)
+
+# ------------------------------------------------------------
+# Corrigir valores negativos do HAND
+# ------------------------------------------------------------
+
+hand_brasil_corrigido <- classify(
+  hand_brasil,
+  rcl = matrix(
+    c(
+      -Inf, -0.000001, NA
+    ),
+    ncol = 3,
+    byrow = TRUE
+  )
+)
+
+names(hand_brasil_corrigido) <- "HAND50"
+arquivo_saida_corrigido <- file.path(
+  pasta_brasil,
+  "AMBDATA_HAND50_30s_Brasil_corrigido.tif"
+)
+
+writeRaster(
+  hand_brasil_corrigido,
+  arquivo_saida_corrigido,
+  overwrite = TRUE,
+  gdal = c("COMPRESS=DEFLATE")
+)
+global(
+  hand_brasil_corrigido,
+  fun = c("min", "max", "mean"),
+  na.rm = TRUE
+)
