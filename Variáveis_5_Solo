@@ -1,0 +1,1106 @@
+# ============================================================
+# PROJETO CAAPORÃ
+# SOILGRIDS / ISRIC
+#
+# Objetivo:
+# Baixar, já recortadas para o Brasil:
+#
+# Propriedades:
+# bdod, cec, clay, silt, sand, phh2o, soc
+#
+# Profundidades:
+# 0-5 cm
+# 5-15 cm
+# 15-30 cm
+#
+# Produto:
+# mean
+#
+# Resolução original:
+# 250 m
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacotes
+# ------------------------------------------------------------
+
+pacotes <- c(
+  "terra",
+  "sf",
+  "geodata"
+)
+
+instalar <- pacotes[
+  !pacotes %in% installed.packages()[, "Package"]
+]
+
+if (length(instalar) > 0) {
+  install.packages(instalar)
+}
+
+library(terra)
+library(sf)
+library(geodata)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_base <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/solos/SoilGrids"
+)
+
+pasta_brasil <- file.path(
+  pasta_base,
+  "01_brasil_250m"
+)
+
+pasta_030 <- file.path(
+  pasta_base,
+  "02_0_30cm"
+)
+
+pasta_limite <- file.path(
+  pasta_base,
+  "limite_brasil"
+)
+
+dir.create(
+  pasta_brasil,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  pasta_030,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  pasta_limite,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. Pasta temporária do terra
+# ------------------------------------------------------------
+
+pasta_temp <- "C:/temp_terra"
+
+dir.create(
+  pasta_temp,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+terraOptions(
+  tempdir = pasta_temp,
+  memfrac = 0.6,
+  progress = 1
+)
+
+
+# ------------------------------------------------------------
+# 3. Propriedades e profundidades
+# ------------------------------------------------------------
+
+propriedades <- c(
+  "bdod",
+  "cec",
+  "clay",
+  "silt",
+  "sand",
+  "phh2o",
+  "soc"
+)
+
+profundidades <- c(
+  "0-5cm",
+  "5-15cm",
+  "15-30cm"
+)
+
+
+# ------------------------------------------------------------
+# 4. Limite do Brasil
+# ------------------------------------------------------------
+
+library(terra)
+library(geodata)
+
+pasta_limite <- file.path(
+  pasta_base,
+  "limite_brasil"
+)
+
+dir.create(
+  pasta_limite,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+brasil <- geodata::gadm(
+  country = "BRA",
+  level = 0,
+  path = pasta_limite
+)
+
+# Conferir
+if (is.null(brasil)) {
+  stop("O limite do Brasil não foi carregado.")
+}
+
+print(brasil)
+# ------------------------------------------------------------
+# Usar limite do Brasil já existente
+# ------------------------------------------------------------
+
+library(terra)
+
+arquivo_brasil <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/hidrologia/HAND_AMBDATA/",
+  "limite_brasil/gadm/gadm41_BRA_0_pk.rds"
+)
+
+brasil <- readRDS(
+  arquivo_brasil
+)
+
+print(brasil)
+
+
+# ------------------------------------------------------------
+# 5. CRS original do SoilGrids
+# ------------------------------------------------------------
+#
+# SoilGrids usa Interrupted Goode Homolosine.
+# ------------------------------------------------------------
+
+# ------------------------------------------------------------
+# CRS SoilGrids
+# ------------------------------------------------------------
+
+crs_soilgrids <- paste0(
+  "+proj=igh ",
+  "+datum=WGS84 ",
+  "+units=m ",
+  "+no_defs"
+)
+
+brasil_igh <- project(
+  brasil,
+  crs_soilgrids
+)
+
+print(brasil_igh)
+
+ext_brasil <- ext(
+  brasil_igh
+)
+
+print(ext_brasil)
+
+
+# ------------------------------------------------------------
+# 5. CRS do SoilGrids
+# ------------------------------------------------------------
+
+crs_soilgrids <- paste0(
+  "+proj=igh ",
+  "+datum=WGS84 ",
+  "+units=m ",
+  "+no_defs"
+)
+
+
+# ------------------------------------------------------------
+# 6. Projetar Brasil para o CRS SoilGrids
+# ------------------------------------------------------------
+
+brasil_igh <- project(
+  brasil,
+  crs_soilgrids
+)
+
+cat(
+  "\nBrasil projetado para o CRS SoilGrids:\n"
+)
+
+print(
+  brasil_igh
+)
+
+
+# ------------------------------------------------------------
+# 7. Extensão do Brasil no CRS SoilGrids
+# ------------------------------------------------------------
+
+ext_brasil <- ext(
+  brasil_igh
+)
+
+cat(
+  "\nExtensão do Brasil no CRS SoilGrids:\n"
+)
+
+print(
+  ext_brasil
+)
+
+# ------------------------------------------------------------
+# 6. Projetar Brasil para o CRS SoilGrids
+# ------------------------------------------------------------
+
+brasil_sf <- st_as_sf(
+  brasil
+)
+
+brasil_igh <- st_transform(
+  brasil_sf,
+  crs_soilgrids
+)
+
+
+# ------------------------------------------------------------
+# 7. Bounding box do Brasil
+# ------------------------------------------------------------
+
+bbox <- st_bbox(
+  brasil_igh
+)
+
+cat(
+  "\nBounding box do Brasil no CRS SoilGrids:\n"
+)
+
+print(bbox)
+
+
+# ------------------------------------------------------------
+# 8. Caminho WebDAV SoilGrids
+# ------------------------------------------------------------
+
+webdav <- paste0(
+  "/vsicurl?",
+  "max_retry=5&",
+  "retry_delay=3&",
+  "list_dir=no&",
+  "url=https://files.isric.org/",
+  "soilgrids/latest/data/"
+)
+
+
+# ------------------------------------------------------------
+# 9. Função para baixar uma camada
+# ------------------------------------------------------------
+
+baixar_soilgrids <- function(
+    propriedade,
+  profundidade
+) {
+  
+  nome_camada <- paste(
+    propriedade,
+    profundidade,
+    "mean",
+    sep = "_"
+  )
+  
+  
+  cat(
+    "\n========================================\n",
+    nome_camada,
+    "\n========================================\n"
+  )
+  
+  
+  # URL VRT remota
+  
+  url_vrt <- paste0(
+    webdav,
+    propriedade,
+    "/",
+    nome_camada,
+    ".vrt"
+  )
+  
+  
+  # arquivo final
+  
+  arquivo_saida <- file.path(
+    pasta_brasil,
+    paste0(
+      nome_camada,
+      "_Brasil_250m.tif"
+    )
+  )
+  
+  
+  # não baixar novamente se já existir
+  
+  if (file.exists(arquivo_saida)) {
+    
+    cat(
+      "Arquivo já existe. Pulando:\n",
+      arquivo_saida,
+      "\n"
+    )
+    
+    return(
+      arquivo_saida
+    )
+  }
+  
+  
+  cat(
+    "Abrindo VRT remoto...\n"
+  )
+  
+  
+  r <- rast(
+    url_vrt
+  )
+  
+  
+  cat(
+    "Raster remoto acessado.\n"
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Recortar usando extensão do Brasil em Homolosine
+  # ----------------------------------------------------------
+  
+  ext_brasil <- ext(
+    bbox["xmin"],
+    bbox["xmax"],
+    bbox["ymin"],
+    bbox["ymax"]
+  )
+  
+  
+  cat(
+    "Recortando para o Brasil...\n"
+  )
+  
+  
+  r_brasil <- crop(
+    r,
+    ext_brasil
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Máscara territorial
+  # ----------------------------------------------------------
+  
+  brasil_vect_igh <- vect(
+    brasil_igh
+  )
+  
+  
+  r_brasil <- mask(
+    r_brasil,
+    brasil_vect_igh
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Salvar
+  # ----------------------------------------------------------
+  
+  cat(
+    "Salvando GeoTIFF...\n"
+  )
+  
+  
+  writeRaster(
+    r_brasil,
+    arquivo_saida,
+    overwrite = TRUE,
+    gdal = c(
+      "COMPRESS=DEFLATE"
+    )
+  )
+  
+  
+  cat(
+    "Salvo:\n",
+    arquivo_saida,
+    "\n"
+  )
+  
+  
+  rm(
+    r,
+    r_brasil
+  )
+  
+  gc()
+  
+  
+  return(
+    arquivo_saida
+  )
+}
+
+
+# ------------------------------------------------------------
+# 10. Baixar as 21 camadas
+# ------------------------------------------------------------
+
+arquivos_baixados <- character()
+
+
+for (prop in propriedades) {
+  
+  for (prof in profundidades) {
+    
+    resultado <- tryCatch(
+      
+      {
+        
+        baixar_soilgrids(
+          propriedade = prop,
+          profundidade = prof
+        )
+        
+      },
+      
+      error = function(e) {
+        
+        cat(
+          "\nERRO:\n",
+          prop,
+          prof,
+          "\n",
+          conditionMessage(e),
+          "\n"
+        )
+        
+        NA_character_
+        
+      }
+      
+    )
+    
+    
+    arquivos_baixados <- c(
+      arquivos_baixados,
+      resultado
+    )
+    
+  }
+  
+}
+
+
+# ------------------------------------------------------------
+# 11. Conferir downloads
+# ------------------------------------------------------------
+
+controle <- data.frame(
+  propriedade = rep(
+    propriedades,
+    each = length(profundidades)
+  ),
+  profundidade = rep(
+    profundidades,
+    times = length(propriedades)
+  ),
+  arquivo = arquivos_baixados,
+  sucesso = !is.na(arquivos_baixados)
+)
+
+
+cat(
+  "\n========================================\n",
+  "RESULTADO DOS DOWNLOADS\n",
+  "========================================\n"
+)
+
+print(
+  controle
+)
+
+
+cat(
+  "\nCamadas baixadas com sucesso:",
+  sum(controle$sucesso),
+  "de",
+  nrow(controle),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 12. Salvar tabela de controle
+# ------------------------------------------------------------
+
+write.csv2(
+  controle,
+  file.path(
+    pasta_base,
+    "controle_download_SoilGrids.csv"
+  ),
+  row.names = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 13. Conferir uma camada
+# ------------------------------------------------------------
+
+arquivo_teste <- controle$arquivo[
+  controle$sucesso
+][1]
+
+teste <- rast(
+  arquivo_teste
+)
+
+cat(
+  "\n========================================\n",
+  "EXEMPLO DE RASTER BAIXADO\n",
+  "========================================\n"
+)
+
+print(
+  teste
+)
+
+cat(
+  "\nResolução:\n"
+)
+
+print(
+  res(teste)
+)
+
+cat(
+  "\nCRS:\n"
+)
+
+print(
+  crs(teste)
+)
+
+cat(
+  "\nExtensão:\n"
+)
+
+print(
+  ext(teste)
+)
+
+
+# ------------------------------------------------------------
+# 14. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DOWNLOAD SOILGRIDS CONCLUÍDO\n",
+  "========================================\n",
+  "\nPasta:\n",
+  pasta_brasil,
+  "\n",
+  sep = ""
+)
+# ============================================================
+# PROJETO CAAPORÃ
+# SOILGRIDS / ISRIC
+#
+# ETAPA:
+# Gerar variáveis edáficas de 0-30 cm
+#
+# Entrada:
+# 3 profundidades em 250 m:
+#   0-5 cm
+#   5-15 cm
+#   15-30 cm
+#
+# Saída:
+# 7 rasters representando 0-30 cm
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacote
+# ------------------------------------------------------------
+
+library(terra)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_base <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/solos/SoilGrids"
+)
+
+pasta_entrada <- file.path(
+  pasta_base,
+  "01_brasil_250m"
+)
+
+pasta_saida <- file.path(
+  pasta_base,
+  "02_0_30cm"
+)
+
+dir.create(
+  pasta_saida,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. Pasta temporária
+# ------------------------------------------------------------
+
+pasta_temp <- "C:/temp_terra"
+
+dir.create(
+  pasta_temp,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+terraOptions(
+  tempdir = pasta_temp,
+  memfrac = 0.6,
+  progress = 1
+)
+
+
+# ------------------------------------------------------------
+# 3. Propriedades
+# ------------------------------------------------------------
+
+propriedades <- c(
+  "bdod",
+  "cec",
+  "clay",
+  "silt",
+  "sand",
+  "phh2o",
+  "soc"
+)
+
+
+# ------------------------------------------------------------
+# 4. Fatores de conversão
+# ------------------------------------------------------------
+#
+# SoilGrids armazena valores inteiros escalados.
+#
+# bdod  -> cg/cm3       dividir por 100
+# cec   -> mmol(c)/kg   dividir por 10 para cmol(c)/kg
+# clay  -> g/kg         dividir por 10 para %
+# silt  -> g/kg         dividir por 10 para %
+# sand  -> g/kg         dividir por 10 para %
+# phh2o -> pH x 10      dividir por 10
+# soc   -> dg/kg        dividir por 10 para g/kg
+#
+# ------------------------------------------------------------
+
+fatores <- c(
+  bdod  = 100,
+  cec   = 10,
+  clay  = 10,
+  silt  = 10,
+  sand  = 10,
+  phh2o = 10,
+  soc   = 10
+)
+
+
+# ------------------------------------------------------------
+# 5. Função para gerar 0-30 cm
+# ------------------------------------------------------------
+
+gerar_030 <- function(propriedade) {
+  
+  cat(
+    "\n========================================\n",
+    "Processando:",
+    propriedade,
+    "\n========================================\n"
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Arquivos das três profundidades
+  # ----------------------------------------------------------
+  
+  arquivo_05 <- file.path(
+    pasta_entrada,
+    paste0(
+      propriedade,
+      "_0-5cm_mean_Brasil_250m.tif"
+    )
+  )
+  
+  arquivo_515 <- file.path(
+    pasta_entrada,
+    paste0(
+      propriedade,
+      "_5-15cm_mean_Brasil_250m.tif"
+    )
+  )
+  
+  arquivo_1530 <- file.path(
+    pasta_entrada,
+    paste0(
+      propriedade,
+      "_15-30cm_mean_Brasil_250m.tif"
+    )
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Conferir arquivos
+  # ----------------------------------------------------------
+  
+  arquivos <- c(
+    arquivo_05,
+    arquivo_515,
+    arquivo_1530
+  )
+  
+  if (!all(file.exists(arquivos))) {
+    
+    stop(
+      paste(
+        "Faltam arquivos para:",
+        propriedade
+      )
+    )
+  }
+  
+  
+  # ----------------------------------------------------------
+  # Abrir rasters
+  # ----------------------------------------------------------
+  
+  r05 <- rast(
+    arquivo_05
+  )
+  
+  r515 <- rast(
+    arquivo_515
+  )
+  
+  r1530 <- rast(
+    arquivo_1530
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Conferir geometria
+  # ----------------------------------------------------------
+  
+  geometria_ok <- compareGeom(
+    r05,
+    r515,
+    r1530,
+    stopOnError = FALSE
+  )
+  
+  if (!geometria_ok) {
+    
+    stop(
+      paste(
+        "As profundidades de",
+        propriedade,
+        "não possuem a mesma geometria."
+      )
+    )
+  }
+  
+  
+  # ----------------------------------------------------------
+  # Média ponderada 0-30 cm
+  #
+  # 0-5   = 5 cm
+  # 5-15  = 10 cm
+  # 15-30 = 15 cm
+  # ----------------------------------------------------------
+  
+  cat(
+    "Calculando média ponderada 0-30 cm...\n"
+  )
+  
+  r030 <- (
+    r05 * 5 +
+      r515 * 10 +
+      r1530 * 15
+  ) / 30
+  
+  
+  # ----------------------------------------------------------
+  # Converter unidade
+  # ----------------------------------------------------------
+  
+  r030 <- r030 / fatores[
+    propriedade
+  ]
+  
+  
+  # ----------------------------------------------------------
+  # Nome da camada
+  # ----------------------------------------------------------
+  
+  names(
+    r030
+  ) <- paste0(
+    propriedade,
+    "_0_30cm"
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Arquivo de saída
+  # ----------------------------------------------------------
+  
+  arquivo_saida <- file.path(
+    pasta_saida,
+    paste0(
+      "SoilGrids_",
+      propriedade,
+      "_0-30cm_Brasil_250m.tif"
+    )
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Salvar
+  # ----------------------------------------------------------
+  
+  writeRaster(
+    r030,
+    arquivo_saida,
+    overwrite = TRUE,
+    gdal = c(
+      "COMPRESS=DEFLATE"
+    )
+  )
+  
+  
+  cat(
+    "Salvo:\n",
+    arquivo_saida,
+    "\n"
+  )
+  
+  
+  # ----------------------------------------------------------
+  # Estatísticas
+  # ----------------------------------------------------------
+  
+  estatisticas <- global(
+    r030,
+    fun = c(
+      "min",
+      "max",
+      "mean"
+    ),
+    na.rm = TRUE
+  )
+  
+  
+  print(
+    estatisticas
+  )
+  
+  
+  rm(
+    r05,
+    r515,
+    r1530,
+    r030
+  )
+  
+  gc()
+  
+  
+  return(
+    arquivo_saida
+  )
+}
+
+
+# ------------------------------------------------------------
+# 6. Processar as 7 propriedades
+# ------------------------------------------------------------
+
+arquivos_030 <- character()
+
+for (prop in propriedades) {
+  
+  resultado <- tryCatch(
+    
+    {
+      
+      gerar_030(
+        prop
+      )
+      
+    },
+    
+    error = function(e) {
+      
+      cat(
+        "\nERRO EM:",
+        prop,
+        "\n",
+        conditionMessage(e),
+        "\n"
+      )
+      
+      NA_character_
+      
+    }
+    
+  )
+  
+  arquivos_030 <- c(
+    arquivos_030,
+    resultado
+  )
+}
+
+
+# ------------------------------------------------------------
+# 7. Tabela de controle
+# ------------------------------------------------------------
+
+controle <- data.frame(
+  propriedade = propriedades,
+  arquivo = arquivos_030,
+  sucesso = !is.na(arquivos_030)
+)
+
+print(
+  controle
+)
+
+
+# ------------------------------------------------------------
+# 8. Salvar controle
+# ------------------------------------------------------------
+
+write.csv2(
+  controle,
+  file.path(
+    pasta_base,
+    "controle_SoilGrids_0_30cm.csv"
+  ),
+  row.names = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 9. Conferir arquivos finais
+# ------------------------------------------------------------
+
+arquivos_finais <- list.files(
+  pasta_saida,
+  pattern = "\\.tif$",
+  full.names = TRUE
+)
+
+cat(
+  "\n========================================\n",
+  "ARQUIVOS 0-30 CM\n",
+  "========================================\n"
+)
+
+print(
+  basename(arquivos_finais)
+)
+
+
+# ------------------------------------------------------------
+# 10. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "SOILGRIDS 0-30 CM CONCLUÍDO\n",
+  "========================================\n",
+  "\nCamadas geradas:",
+  sum(controle$sucesso),
+  "de",
+  length(propriedades),
+  "\n",
+  sep = ""
+)
+
+# ------------------------------------------------------------
+# Conferir estatísticas das 7 variáveis finais
+# ------------------------------------------------------------
+
+arquivos_finais <- list.files(
+  pasta_saida,
+  pattern = "\\.tif$",
+  full.names = TRUE
+)
+
+for (arquivo in arquivos_finais) {
+  
+  r <- rast(arquivo)
+  
+  cat(
+    "\n========================================\n",
+    basename(arquivo),
+    "\n========================================\n"
+  )
+  
+  print(
+    global(
+      r,
+      fun = c("min", "max", "mean"),
+      na.rm = TRUE
+    )
+  )
+}
+clay <- rast(
+  file.path(
+    pasta_saida,
+    "SoilGrids_clay_0-30cm_Brasil_250m.tif"
+  )
+)
+
+silt <- rast(
+  file.path(
+    pasta_saida,
+    "SoilGrids_silt_0-30cm_Brasil_250m.tif"
+  )
+)
+
+sand <- rast(
+  file.path(
+    pasta_saida,
+    "SoilGrids_sand_0-30cm_Brasil_250m.tif"
+  )
+)
+
+textura_soma <- clay + silt + sand
+
+global(
+  textura_soma,
+  fun = c("min", "max", "mean"),
+  na.rm = TRUE
+)
