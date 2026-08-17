@@ -1,0 +1,486 @@
+# ============================================================
+# PROJETO CAAPORÃ
+# MAPBIOMAS - COBERTURA E USO DA TERRA
+#
+# Brasil
+# Ano: 2024
+# Resolução: 30 m
+#
+# Download direto do MapBiomas
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacote
+# ------------------------------------------------------------
+
+library(terra)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_base <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/vegetacao/MapBiomas"
+)
+
+pasta_bruto <- file.path(
+  pasta_base,
+  "01_bruto"
+)
+
+pasta_processado <- file.path(
+  pasta_base,
+  "02_processado"
+)
+
+dir.create(
+  pasta_bruto,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  pasta_processado,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. URL oficial MapBiomas
+# ------------------------------------------------------------
+
+url_mapbiomas <- paste0(
+  "https://storage.googleapis.com/",
+  "mapbiomas-public/initiatives/brasil/",
+  "collection_10/lulc/coverage/",
+  "brazil_coverage_2024.tif"
+)
+
+
+# ------------------------------------------------------------
+# 3. Arquivo de destino
+# ------------------------------------------------------------
+
+arquivo_mapbiomas <- file.path(
+  pasta_bruto,
+  "MapBiomas_Collection10_2024_Brasil_30m.tif"
+)
+
+
+# ------------------------------------------------------------
+# 4. Download
+# ------------------------------------------------------------
+
+if (!file.exists(arquivo_mapbiomas)) {
+  
+  cat(
+    "\n========================================\n",
+    "BAIXANDO MAPBIOMAS 2024\n",
+    "========================================\n\n"
+  )
+  
+  download.file(
+    url = url_mapbiomas,
+    destfile = arquivo_mapbiomas,
+    mode = "wb",
+    method = "libcurl",
+    quiet = FALSE
+  )
+  
+} else {
+  
+  cat(
+    "\nO arquivo já existe:\n",
+    arquivo_mapbiomas,
+    "\n"
+  )
+  
+}
+
+
+# ------------------------------------------------------------
+# 5. Conferir se o arquivo existe
+# ------------------------------------------------------------
+
+if (!file.exists(arquivo_mapbiomas)) {
+  stop("O arquivo MapBiomas não foi baixado.")
+}
+
+
+# ------------------------------------------------------------
+# 6. Conferir tamanho
+# ------------------------------------------------------------
+
+tamanho_mb <- file.info(
+  arquivo_mapbiomas
+)$size / 1024^2
+
+cat(
+  "\nTamanho do arquivo:",
+  round(tamanho_mb, 2),
+  "MB\n"
+)
+
+
+# ------------------------------------------------------------
+# 7. Abrir raster
+# ------------------------------------------------------------
+
+cat(
+  "\nAbrindo raster...\n"
+)
+
+mapbiomas <- rast(
+  arquivo_mapbiomas
+)
+
+
+# ------------------------------------------------------------
+# 8. Informações
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "MAPBIOMAS 2024\n",
+  "========================================\n"
+)
+
+print(
+  mapbiomas
+)
+
+cat(
+  "\nResolução:\n"
+)
+
+print(
+  res(mapbiomas)
+)
+
+cat(
+  "\nCRS:\n"
+)
+
+print(
+  crs(mapbiomas)
+)
+
+cat(
+  "\nExtensão:\n"
+)
+
+print(
+  ext(mapbiomas)
+)
+
+
+# ------------------------------------------------------------
+# 9. Classes presentes
+# ------------------------------------------------------------
+
+cat(
+  "\nCalculando frequência das classes...\n"
+)
+
+frequencias <- freq(
+  mapbiomas
+)
+
+print(
+  frequencias
+)
+
+
+# ------------------------------------------------------------
+# 10. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DOWNLOAD CONCLUÍDO\n",
+  "========================================\n",
+  "\nArquivo:\n",
+  arquivo_mapbiomas,
+  "\n",
+  sep = ""
+)
+# ============================================================
+# PROJETO CAAPORÃ
+# MAPBIOMAS - VEGETAÇÃO NATIVA
+#
+# Objetivos:
+# 1. Reclassificar MapBiomas 2024
+# 2. 1 = vegetação nativa
+# 3. 0 = demais classes
+# 4. Calcular % de vegetação nativa em ~1 km
+# ============================================================
+
+library(terra)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_base <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/vegetacao/MapBiomas"
+)
+
+pasta_bruto <- file.path(
+  pasta_base,
+  "01_bruto"
+)
+
+pasta_processado <- file.path(
+  pasta_base,
+  "02_processado"
+)
+
+dir.create(
+  pasta_processado,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. Abrir MapBiomas
+# ------------------------------------------------------------
+
+arquivo_mapbiomas <- file.path(
+  pasta_bruto,
+  "MapBiomas_Collection10_2024_Brasil_30m.tif"
+)
+
+mapbiomas <- rast(
+  arquivo_mapbiomas
+)
+
+names(mapbiomas) <- "MapBiomas_2024"
+
+
+# ------------------------------------------------------------
+# 3. Classes de vegetação nativa
+# ------------------------------------------------------------
+
+classes_nativas <- c(
+  3,   # Formação Florestal
+  4,   # Formação Savânica
+  5,   # Mangue
+  6,   # Floresta Alagável
+  11,  # Campo Alagado e Área Pantanosa
+  12,  # Formação Campestre
+  49,  # Restinga Arbórea
+  50   # Restinga Herbácea
+)
+
+
+# ------------------------------------------------------------
+# 4. Criar raster binário
+# ------------------------------------------------------------
+#
+# 1 = vegetação nativa
+# 0 = demais classes
+#
+# IMPORTANTE:
+# classe 0 = sem dado
+# Vamos manter como NA, não como 0.
+# ------------------------------------------------------------
+
+vegetacao_nativa <- ifel(
+  mapbiomas == 0,
+  NA,
+  ifel(
+    mapbiomas %in% classes_nativas,
+    1,
+    0
+  )
+)
+
+
+names(
+  vegetacao_nativa
+) <- "vegetacao_nativa"
+
+
+# ------------------------------------------------------------
+# 5. Conferência
+# ------------------------------------------------------------
+
+cat(
+  "\nFrequência do raster binário:\n"
+)
+
+print(
+  freq(vegetacao_nativa)
+)
+
+
+# ------------------------------------------------------------
+# 6. Salvar raster binário 30 m
+# ------------------------------------------------------------
+
+arquivo_binario <- file.path(
+  pasta_processado,
+  "MapBiomas_vegetacao_nativa_binaria_2024_30m.tif"
+)
+
+writeRaster(
+  vegetacao_nativa,
+  arquivo_binario,
+  overwrite = TRUE,
+  gdal = c("COMPRESS=DEFLATE")
+)
+
+
+# ------------------------------------------------------------
+# 7. Raster de referência ~1 km
+# ------------------------------------------------------------
+
+arquivo_ref <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/topografia/HydroSHEDS/",
+  "04_brasil_30s/",
+  "HydroSHEDS_CONDEM_30s_Brasil.tif"
+)
+
+ref <- rast(
+  arquivo_ref
+)
+
+print(ref)
+
+
+# ------------------------------------------------------------
+# 8. Reamostrar para a grade de ~1 km
+# ------------------------------------------------------------
+#
+# Como o raster é 0/1:
+# a média representa a proporção de vegetação nativa.
+# ------------------------------------------------------------
+
+cat(
+  "\nCalculando proporção de vegetação nativa...\n"
+)
+
+vegetacao_prop <- resample(
+  vegetacao_nativa,
+  ref,
+  method = "average"
+)
+
+names(
+  vegetacao_prop
+) <- "proporcao_vegetacao_nativa"
+
+
+# ------------------------------------------------------------
+# 9. Converter para porcentagem
+# ------------------------------------------------------------
+
+vegetacao_pct <- vegetacao_prop * 100
+
+names(
+  vegetacao_pct
+) <- "vegetacao_nativa_pct"
+
+
+# ------------------------------------------------------------
+# 10. Aplicar máscara do Brasil
+# ------------------------------------------------------------
+
+vegetacao_pct <- mask(
+  vegetacao_pct,
+  ref
+)
+
+
+# ------------------------------------------------------------
+# 11. Salvar resultado
+# ------------------------------------------------------------
+
+arquivo_saida <- file.path(
+  pasta_processado,
+  "MapBiomas_vegetacao_nativa_pct_2024_1km_Brasil.tif"
+)
+
+writeRaster(
+  vegetacao_pct,
+  arquivo_saida,
+  overwrite = TRUE,
+  gdal = c("COMPRESS=DEFLATE")
+)
+
+
+# ------------------------------------------------------------
+# 12. Estatísticas
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "VEGETAÇÃO NATIVA - 2024\n",
+  "========================================\n"
+)
+
+print(
+  global(
+    vegetacao_pct,
+    fun = c(
+      "min",
+      "max",
+      "mean"
+    ),
+    na.rm = TRUE
+  )
+)
+
+
+# ------------------------------------------------------------
+# 13. Conferir resolução
+# ------------------------------------------------------------
+
+cat(
+  "\nResolução final:\n"
+)
+
+print(
+  res(vegetacao_pct)
+)
+
+cat(
+  "\nCRS:\n"
+)
+
+print(
+  crs(vegetacao_pct)
+)
+
+
+# ------------------------------------------------------------
+# 14. Visualizar
+# ------------------------------------------------------------
+
+plot(
+  vegetacao_pct,
+  main = "% de vegetação nativa - MapBiomas 2024"
+)
+
+
+# ------------------------------------------------------------
+# 15. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PROCESSAMENTO CONCLUÍDO\n",
+  "========================================\n",
+  "\nArquivo final:\n",
+  arquivo_saida,
+  "\n",
+  sep = ""
+)
