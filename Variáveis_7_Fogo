@@ -1,0 +1,518 @@
+# ============================================================
+# PROJETO CAAPORÃ
+# MAPBIOMAS FOGO
+#
+# Variável: Frequência de fogo
+# Período: 1985-2024
+# Coleção: MapBiomas Fogo 4
+#
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacote
+# ------------------------------------------------------------
+
+library(terra)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_base <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/fogo/MapBiomas_Fogo"
+)
+
+pasta_bruto <- file.path(
+  pasta_base,
+  "01_bruto"
+)
+
+pasta_processado <- file.path(
+  pasta_base,
+  "02_processado"
+)
+
+dir.create(
+  pasta_bruto,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  pasta_processado,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. URL oficial
+# ------------------------------------------------------------
+
+url_fogo <- paste0(
+  "https://storage.googleapis.com/",
+  "mapbiomas-public/initiatives/brasil/",
+  "collection_9/fire-col4/",
+  "fire_frequency_v1/",
+  "mapbiomas_fire_col4_br_fire_frequency_1985_2024.tif"
+)
+
+
+# ------------------------------------------------------------
+# 3. Arquivo local
+# ------------------------------------------------------------
+
+arquivo_fogo <- file.path(
+  pasta_bruto,
+  "MapBiomas_Fogo_Frequencia_1985_2024_30m.tif"
+)
+
+
+# ------------------------------------------------------------
+# 4. Download
+# ------------------------------------------------------------
+
+if (!file.exists(arquivo_fogo)) {
+  
+  cat(
+    "\n========================================\n",
+    "BAIXANDO MAPBIOMAS FOGO\n",
+    "FREQUÊNCIA 1985-2024\n",
+    "========================================\n\n"
+  )
+  
+  download.file(
+    url = url_fogo,
+    destfile = arquivo_fogo,
+    mode = "wb",
+    method = "libcurl",
+    quiet = FALSE
+  )
+  
+} else {
+  
+  cat(
+    "\nArquivo já existe. Pulando download:\n",
+    arquivo_fogo,
+    "\n"
+  )
+  
+}
+
+
+# ------------------------------------------------------------
+# 5. Conferir existência
+# ------------------------------------------------------------
+
+if (!file.exists(arquivo_fogo)) {
+  
+  stop(
+    "O arquivo de frequência de fogo não foi baixado."
+  )
+  
+}
+
+
+# ------------------------------------------------------------
+# 6. Tamanho do arquivo
+# ------------------------------------------------------------
+
+tamanho_mb <- file.info(
+  arquivo_fogo
+)$size / 1024^2
+
+cat(
+  "\nTamanho do arquivo:",
+  round(tamanho_mb, 2),
+  "MB\n"
+)
+
+
+# ------------------------------------------------------------
+# 7. Abrir raster
+# ------------------------------------------------------------
+
+cat(
+  "\nAbrindo raster...\n"
+)
+
+fogo <- rast(
+  arquivo_fogo
+)
+
+names(
+  fogo
+) <- "fire_frequency_1985_2024"
+
+
+# ------------------------------------------------------------
+# 8. Informações
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "MAPBIOMAS FOGO - FREQUÊNCIA\n",
+  "========================================\n"
+)
+
+print(
+  fogo
+)
+
+cat(
+  "\nResolução:\n"
+)
+
+print(
+  res(fogo)
+)
+
+cat(
+  "\nCRS:\n"
+)
+
+print(
+  crs(fogo)
+)
+
+cat(
+  "\nExtensão:\n"
+)
+
+print(
+  ext(fogo)
+)
+
+
+# ------------------------------------------------------------
+# 9. Valores mínimo e máximo
+# ------------------------------------------------------------
+
+cat(
+  "\nMínimo e máximo:\n"
+)
+
+print(
+  global(
+    fogo,
+    fun = c(
+      "min",
+      "max"
+    ),
+    na.rm = TRUE
+  )
+)
+
+
+# ------------------------------------------------------------
+# 10. Frequência dos valores
+# ------------------------------------------------------------
+
+cat(
+  "\nCalculando frequência dos valores...\n"
+)
+
+frequencias <- freq(
+  fogo
+)
+
+print(
+  frequencias
+)
+
+
+# ------------------------------------------------------------
+# 11. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DOWNLOAD CONCLUÍDO\n",
+  "========================================\n",
+  "\nArquivo:\n",
+  arquivo_fogo,
+  "\n",
+  sep = ""
+)
+# ============================================================
+# PROJETO CAAPORÃ
+# MAPBIOMAS FOGO
+#
+# Derivados em ~1 km:
+# 1. Frequência média de fogo
+# 2. % da célula que queimou pelo menos uma vez
+# ============================================================
+
+library(terra)
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_base <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/fogo/MapBiomas_Fogo"
+)
+
+pasta_bruto <- file.path(
+  pasta_base,
+  "01_bruto"
+)
+
+pasta_processado <- file.path(
+  pasta_base,
+  "02_processado"
+)
+
+dir.create(
+  pasta_processado,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. Abrir frequência de fogo 30 m
+# ------------------------------------------------------------
+
+arquivo_fogo <- file.path(
+  pasta_bruto,
+  "MapBiomas_Fogo_Frequencia_1985_2024_30m.tif"
+)
+
+fogo <- rast(
+  arquivo_fogo
+)
+
+names(fogo) <- "fire_frequency"
+
+
+# ------------------------------------------------------------
+# 3. Raster de referência ~1 km
+# ------------------------------------------------------------
+
+arquivo_ref <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis/topografia/HydroSHEDS/",
+  "04_brasil_30s/",
+  "HydroSHEDS_CONDEM_30s_Brasil.tif"
+)
+
+ref <- rast(
+  arquivo_ref
+)
+
+
+# ------------------------------------------------------------
+# 4. FREQUÊNCIA MÉDIA DE FOGO
+# ------------------------------------------------------------
+#
+# Média do número de ocorrências de fogo
+# entre os pixels de 30 m dentro de cada célula ~1 km.
+#
+# Exemplo:
+# valor 3 = em média, os pixels daquela célula
+# queimaram 3 vezes entre 1985 e 2024.
+#
+# ------------------------------------------------------------
+
+cat(
+  "\nCalculando frequência média de fogo...\n"
+)
+
+fogo_media <- resample(
+  fogo,
+  ref,
+  method = "average"
+)
+
+names(
+  fogo_media
+) <- "fire_frequency_mean"
+
+
+# máscara
+fogo_media <- mask(
+  fogo_media,
+  ref
+)
+
+
+# ------------------------------------------------------------
+# 5. Salvar frequência média
+# ------------------------------------------------------------
+
+arquivo_media <- file.path(
+  pasta_processado,
+  "MapBiomas_Fogo_frequencia_media_1985_2024_1km_Brasil.tif"
+)
+
+writeRaster(
+  fogo_media,
+  arquivo_media,
+  overwrite = TRUE,
+  gdal = c("COMPRESS=DEFLATE")
+)
+
+
+# ------------------------------------------------------------
+# 6. Criar raster binário de ocorrência de fogo
+# ------------------------------------------------------------
+#
+# 1 = queimou pelo menos uma vez
+# 0 = nunca queimou
+#
+# ------------------------------------------------------------
+
+fogo_binario <- ifel(
+  fogo > 0,
+  1,
+  0
+)
+
+names(
+  fogo_binario
+) <- "burned_at_least_once"
+
+
+# ------------------------------------------------------------
+# 7. % da célula que queimou pelo menos uma vez
+# ------------------------------------------------------------
+
+cat(
+  "\nCalculando porcentagem da área que queimou...\n"
+)
+
+fogo_prop <- resample(
+  fogo_binario,
+  ref,
+  method = "average"
+)
+
+fogo_pct <- fogo_prop * 100
+
+names(
+  fogo_pct
+) <- "burned_area_pct"
+
+
+# máscara
+fogo_pct <- mask(
+  fogo_pct,
+  ref
+)
+
+
+# ------------------------------------------------------------
+# 8. Salvar % queimado
+# ------------------------------------------------------------
+
+arquivo_pct <- file.path(
+  pasta_processado,
+  "MapBiomas_Fogo_area_queimada_pct_1985_2024_1km_Brasil.tif"
+)
+
+writeRaster(
+  fogo_pct,
+  arquivo_pct,
+  overwrite = TRUE,
+  gdal = c("COMPRESS=DEFLATE")
+)
+
+
+# ------------------------------------------------------------
+# 9. Conferência
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "FREQUÊNCIA MÉDIA DE FOGO\n",
+  "========================================\n"
+)
+
+print(
+  global(
+    fogo_media,
+    fun = c(
+      "min",
+      "max",
+      "mean"
+    ),
+    na.rm = TRUE
+  )
+)
+
+
+cat(
+  "\n========================================\n",
+  "% DA ÁREA QUE QUEIMOU PELO MENOS UMA VEZ\n",
+  "========================================\n"
+)
+
+print(
+  global(
+    fogo_pct,
+    fun = c(
+      "min",
+      "max",
+      "mean"
+    ),
+    na.rm = TRUE
+  )
+)
+
+
+# ------------------------------------------------------------
+# 10. Conferir geometria
+# ------------------------------------------------------------
+
+cat(
+  "\nResolução:\n"
+)
+
+print(
+  res(fogo_media)
+)
+
+cat(
+  "\nCRS:\n"
+)
+
+print(
+  crs(fogo_media)
+)
+
+
+# ------------------------------------------------------------
+# 11. Visualização
+# ------------------------------------------------------------
+
+plot(
+  fogo_media,
+  main = "Frequência média de fogo - 1985-2024"
+)
+
+plot(
+  fogo_pct,
+  main = "% da área que queimou - 1985-2024"
+)
+
+
+# ------------------------------------------------------------
+# 12. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PROCESSAMENTO CONCLUÍDO\n",
+  "========================================\n",
+  "\nFrequência média:\n",
+  arquivo_media,
+  "\n\n% área queimada:\n",
+  arquivo_pct,
+  "\n",
+  sep = ""
+)
