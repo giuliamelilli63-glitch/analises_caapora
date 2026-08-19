@@ -1,0 +1,2740 @@
+library(sf)
+
+# ------------------------------------------------------------
+# Testar acesso à camada de PONTOS do IPHAN
+# ------------------------------------------------------------
+
+url_pontos <- paste0(
+  "https://geoserver.iphan.gov.br/geoserver/SICG/ows?",
+  "service=WFS&",
+  "version=1.0.0&",
+  "request=GetFeature&",
+  "typeName=SICG:sitios&",
+  "outputFormat=application/json"
+)
+
+cat("\nTentando acessar os sítios arqueológicos...\n")
+
+sitios_teste <- st_read(
+  url_pontos,
+  quiet = FALSE
+)
+print(sitios_teste)
+
+nrow(sitios_teste)
+
+st_geometry_type(sitios_teste)
+
+st_crs(sitios_teste)
+
+names(sitios_teste)
+
+# ============================================================
+# AUDITORIA DAS COORDENADAS
+# SÍTIOS ARQUEOLÓGICOS - IPHAN
+# ============================================================
+
+library(sf)
+
+# ------------------------------------------------------------
+# 1. Extrair coordenadas
+# ------------------------------------------------------------
+
+coords <- st_coordinates(sitios_teste)
+
+sitios_teste$longitude <- coords[, 1]
+sitios_teste$latitude  <- coords[, 2]
+
+# ------------------------------------------------------------
+# 2. Resumo das coordenadas
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "RESUMO DAS COORDENADAS\n",
+  "========================================\n"
+)
+
+summary(sitios_teste$longitude)
+summary(sitios_teste$latitude)
+
+# ------------------------------------------------------------
+# 3. Identificar coordenadas plausíveis para o Brasil
+# ------------------------------------------------------------
+# Limites amplos para detectar erros grosseiros.
+# Não estamos ainda recortando pela fronteira exata do Brasil.
+
+sitios_teste$coordenada_valida <-
+  sitios_teste$longitude >= -90 &
+  sitios_teste$longitude <= -20 &
+  sitios_teste$latitude >= -60 &
+  sitios_teste$latitude <= 20
+
+# ------------------------------------------------------------
+# 4. Contagem
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "COORDENADAS PLAUSÍVEIS\n",
+  "========================================\n"
+)
+
+print(
+  table(
+    sitios_teste$coordenada_plausivel,
+    useNA = "ifany"
+  )
+)
+
+cat(
+  "\nTotal de registros:",
+  nrow(sitios_teste),
+  "\n"
+)
+
+cat(
+  "Coordenadas plausíveis:",
+  sum(
+    sitios_teste$coordenada_plausivel,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+cat(
+  "Coordenadas problemáticas:",
+  sum(
+    !sitios_teste$coordenada_plausivel,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+# ------------------------------------------------------------
+# 5. Separar registros problemáticos
+# ------------------------------------------------------------
+
+sitios_problematicos <- sitios_teste[
+  !sitios_teste$coordenada_plausivel,
+]
+
+# ------------------------------------------------------------
+# 6. Mostrar coordenadas problemáticas
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "REGISTROS PROBLEMÁTICOS\n",
+  "========================================\n"
+)
+
+print(
+  sitios_problematicos[
+    ,
+    c(
+      "id_bem",
+      "identificacao_bem",
+      "co_iphan",
+      "ds_classificacao",
+      "longitude",
+      "latitude"
+    )
+  ]
+)
+
+# ------------------------------------------------------------
+# 7. Quantidade por classificação
+# ------------------------------------------------------------
+
+cat(
+  "\nClassificação dos registros problemáticos:\n"
+)
+
+print(
+  table(
+    sitios_problematicos$ds_classificacao,
+    useNA = "ifany"
+  )
+)
+
+# ============================================================
+# AUDITORIA CORRIGIDA DAS COORDENADAS
+# SÍTIOS ARQUEOLÓGICOS - IPHAN
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. Coordenada geograficamente válida
+# ------------------------------------------------------------
+
+sitios_teste$coordenada_valida <-
+  is.finite(sitios_teste$longitude) &
+  is.finite(sitios_teste$latitude) &
+  sitios_teste$longitude >= -180 &
+  sitios_teste$longitude <= 180 &
+  sitios_teste$latitude >= -90 &
+  sitios_teste$latitude <= 90
+
+
+# ------------------------------------------------------------
+# 2. Contagem
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "VALIDADE GEOGRÁFICA DAS COORDENADAS\n",
+  "========================================\n"
+)
+
+print(
+  table(
+    sitios_teste$coordenada_valida,
+    useNA = "ifany"
+  )
+)
+
+cat(
+  "\nTotal de registros:",
+  nrow(sitios_teste),
+  "\n"
+)
+
+cat(
+  "Coordenadas válidas:",
+  sum(sitios_teste$coordenada_valida, na.rm = TRUE),
+  "\n"
+)
+
+cat(
+  "Coordenadas inválidas:",
+  sum(!sitios_teste$coordenada_valida, na.rm = TRUE),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 3. Identificar somente os realmente inválidos
+# ------------------------------------------------------------
+
+sitios_coordenadas_invalidas <- sitios_teste[
+  !sitios_teste$coordenada_valida,
+]
+
+
+# ------------------------------------------------------------
+# 4. Mostrar os registros inválidos
+# ------------------------------------------------------------
+
+print(
+  sitios_coordenadas_invalidas[
+    ,
+    c(
+      "id_bem",
+      "identificacao_bem",
+      "co_iphan",
+      "ds_classificacao",
+      "longitude",
+      "latitude"
+    )
+  ]
+)
+# ============================================================
+# CLASSIFICAÇÕES DOS SÍTIOS ARQUEOLÓGICOS
+# ============================================================
+
+cat(
+  "\n========================================\n",
+  "CLASSIFICAÇÃO DOS SÍTIOS - IPHAN\n",
+  "========================================\n"
+)
+
+classificacoes <- sort(
+  table(
+    sitios_teste$ds_classificacao,
+    useNA = "ifany"
+  ),
+  decreasing = TRUE
+)
+
+print(classificacoes)
+
+cat(
+  "\nNúmero de categorias:",
+  length(classificacoes),
+  "\n"
+)
+cat(
+  "\n========================================\n",
+  "VALORES DE ds_sintese\n",
+  "========================================\n"
+)
+
+print(
+  sort(
+    table(
+      sitios_teste$ds_sintese,
+      useNA = "ifany"
+    ),
+    decreasing = TRUE
+  )
+)
+names(sitios_teste)
+
+
+# ============================================================
+# INVESTIGAR ATRIBUTOS ARQUEOLÓGICOS
+# ============================================================
+
+campos_investigar <- c(
+  "ds_contexto",
+  "ds_tipo_sitio",
+  "ds_exposicao",
+  "ds_conteudo",
+  "ds_estruturas"
+)
+
+for (campo in campos_investigar) {
+  
+  if (campo %in% names(sitios_teste)) {
+    
+    cat(
+      "\n========================================\n",
+      campo,
+      "\n========================================\n"
+    )
+    
+    print(
+      head(
+        sort(
+          table(
+            sitios_teste[[campo]],
+            useNA = "ifany"
+          ),
+          decreasing = TRUE
+        ),
+        30
+      )
+    )
+  }
+}
+# ============================================================
+# SÍTIOS SEM CLASSIFICAÇÃO
+# ============================================================
+
+sem_classificacao <- sitios_teste[
+  sitios_teste$ds_classificacao == "Sem classificação",
+]
+
+cat(
+  "\nNúmero de sítios sem classificação:",
+  nrow(sem_classificacao),
+  "\n"
+)
+
+# Ver os primeiros registros
+print(
+  sem_classificacao[
+    1:min(20, nrow(sem_classificacao)),
+    c(
+      "id_bem",
+      "identificacao_bem",
+      "co_iphan",
+      "ds_classificacao"
+    )
+  ]
+)
+
+
+# ============================================================
+# BASE ESPACIALMENTE VÁLIDA - IPHAN
+# ============================================================
+
+sitios_validos <- sitios_teste[
+  sitios_teste$coordenada_valida,
+]
+
+cat(
+  "\nTotal de sítios com coordenadas válidas:",
+  nrow(sitios_validos),
+  "\n"
+)
+
+cat(
+  "\nClassificações entre os sítios válidos:\n"
+)
+
+print(
+  sort(
+    table(
+      sitios_validos$ds_classificacao,
+      useNA = "ifany"
+    ),
+    decreasing = TRUE
+  )
+)
+
+# ============================================================
+# SALVAR BASE DE PONTOS VÁLIDOS
+# ============================================================
+
+library(sf)
+
+pasta_iphan <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/arqueologia/IPHAN"
+)
+
+pasta_processado <- file.path(
+  pasta_iphan,
+  "02_processado"
+)
+
+dir.create(
+  pasta_processado,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+st_write(
+  sitios_validos,
+  file.path(
+    pasta_processado,
+    "IPHAN_sitios_pontos_coordenadas_validas.gpkg"
+  ),
+  delete_dsn = TRUE,
+  quiet = TRUE
+)
+
+st_write(
+  sitios_coordenadas_invalidas,
+  file.path(
+    pasta_processado,
+    "IPHAN_sitios_coordenadas_invalidas.gpkg"
+  ),
+  delete_dsn = TRUE,
+  quiet = TRUE
+)
+
+library(sf)
+
+url_poligonos <- paste0(
+  "https://geoserver.iphan.gov.br/geoserver/SICG/ows?",
+  "service=WFS&",
+  "version=1.0.0&",
+  "request=GetFeature&",
+  "typeName=SICG:sitios_pol&",
+  "outputFormat=application/json"
+)
+
+cat(
+  "\nTentando acessar os polígonos dos sítios arqueológicos...\n"
+)
+
+sitios_pol <- st_read(
+  url_poligonos,
+  quiet = FALSE
+)
+
+cat(
+  "\nNúmero de polígonos:",
+  nrow(sitios_pol),
+  "\n"
+)
+
+print(
+  st_geometry_type(sitios_pol)
+)
+
+print(
+  st_crs(sitios_pol)
+)
+
+print(
+  names(sitios_pol)
+)
+
+print(
+  head(
+    as.data.frame(
+      st_drop_geometry(sitios_pol)
+    )
+  )
+)
+
+intersect(
+  names(sitios_validos),
+  names(sitios_pol)
+)
+
+# ============================================================
+# CORRESPONDÊNCIA ENTRE PONTOS E POLÍGONOS - IPHAN
+# ============================================================
+
+# IDs únicos
+ids_pontos <- unique(sitios_validos$id_bem)
+ids_poligonos <- unique(sitios_pol$id_bem)
+
+cat(
+  "\n========================================\n",
+  "CORRESPONDÊNCIA PONTOS x POLÍGONOS\n",
+  "========================================\n"
+)
+
+cat(
+  "\nIDs únicos nos pontos:",
+  length(ids_pontos),
+  "\n"
+)
+
+cat(
+  "IDs únicos nos polígonos:",
+  length(ids_poligonos),
+  "\n"
+)
+
+cat(
+  "IDs presentes nas duas bases:",
+  length(
+    intersect(
+      ids_pontos,
+      ids_poligonos
+    )
+  ),
+  "\n"
+)
+
+cat(
+  "IDs somente nos pontos:",
+  length(
+    setdiff(
+      ids_pontos,
+      ids_poligonos
+    )
+  ),
+  "\n"
+)
+
+cat(
+  "IDs somente nos polígonos:",
+  length(
+    setdiff(
+      ids_poligonos,
+      ids_pontos
+    )
+  ),
+  "\n"
+)
+
+# ============================================================
+# DUPLICAÇÃO DE id_bem NOS POLÍGONOS
+# ============================================================
+
+duplicados_pol <- sort(
+  table(
+    sitios_pol$id_bem
+  ),
+  decreasing = TRUE
+)
+
+cat(
+  "\nMaior número de polígonos para um mesmo id_bem:",
+  max(duplicados_pol),
+  "\n"
+)
+
+cat(
+  "IDs com mais de um registro:",
+  sum(
+    duplicados_pol > 1
+  ),
+  "\n"
+)
+
+head(
+  duplicados_pol,
+  20
+)
+# ============================================================
+# DUPLICAÇÃO DE id_bem NOS POLÍGONOS
+# ============================================================
+
+duplicados_pol <- sort(
+  table(
+    sitios_pol$id_bem
+  ),
+  decreasing = TRUE
+)
+
+cat(
+  "\nMaior número de polígonos para um mesmo id_bem:",
+  max(duplicados_pol),
+  "\n"
+)
+
+cat(
+  "IDs com mais de um registro:",
+  sum(
+    duplicados_pol > 1
+  ),
+  "\n"
+)
+
+head(
+  duplicados_pol,
+  20
+)
+
+# ============================================================
+# DISPONIBILIDADE DE sintese_bem
+# ============================================================
+
+cat(
+  "\n========================================\n",
+  "SÍNTESE DOS SÍTIOS\n",
+  "========================================\n"
+)
+
+cat(
+  "\nTotal de sítios:",
+  nrow(sitios_validos),
+  "\n"
+)
+
+cat(
+  "Com síntese:",
+  sum(
+    !is.na(sitios_validos$sintese_bem) &
+      trimws(sitios_validos$sintese_bem) != ""
+  ),
+  "\n"
+)
+
+cat(
+  "Sem síntese:",
+  sum(
+    is.na(sitios_validos$sintese_bem) |
+      trimws(sitios_validos$sintese_bem) == ""
+  ),
+  "\n"
+)
+
+# Apenas os "Sem classificação"
+
+sem_class <- sitios_validos[
+  sitios_validos$ds_classificacao == "Sem classificação",
+]
+
+cat(
+  "\nEntre os 14.433 'Sem classificação':\n"
+)
+
+cat(
+  "Com síntese:",
+  sum(
+    !is.na(sem_class$sintese_bem) &
+      trimws(sem_class$sintese_bem) != ""
+  ),
+  "\n"
+)
+
+cat(
+  "Sem síntese:",
+  sum(
+    is.na(sem_class$sintese_bem) |
+      trimws(sem_class$sintese_bem) == ""
+  ),
+  "\n"
+)
+
+# ============================================================
+# BASE ARQUEOLÓGICA FINAL - IPHAN
+#
+# Regra:
+# - usar polígono quando disponível
+# - usar ponto quando não houver polígono
+# ============================================================
+
+library(sf)
+
+# ------------------------------------------------------------
+# 1. Pontos que NÃO possuem polígono
+# ------------------------------------------------------------
+
+pontos_sem_poligono <- sitios_validos[
+  !sitios_validos$id_bem %in% sitios_pol$id_bem,
+]
+
+cat(
+  "\nPontos sem polígono:",
+  nrow(pontos_sem_poligono),
+  "\n"
+)
+
+# ------------------------------------------------------------
+# 2. Polígonos
+# ------------------------------------------------------------
+
+poligonos_validos <- sitios_pol
+
+cat(
+  "Sítios representados por polígonos:",
+  nrow(poligonos_validos),
+  "\n"
+)
+
+# ------------------------------------------------------------
+# 3. Conferência
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "BASE ARQUEOLÓGICA FINAL\n",
+  "========================================\n"
+)
+
+cat(
+  "Polígonos:",
+  nrow(poligonos_validos),
+  "\n"
+)
+
+cat(
+  "Pontos:",
+  nrow(pontos_sem_poligono),
+  "\n"
+)
+
+cat(
+  "Total de sítios:",
+  nrow(poligonos_validos) +
+    nrow(pontos_sem_poligono),
+  "\n"
+)
+
+# ------------------------------------------------------------
+# 4. Conferir se há sobreposição de IDs
+# ------------------------------------------------------------
+
+cat(
+  "\nIDs presentes simultaneamente nas duas bases:",
+  length(
+    intersect(
+      poligonos_validos$id_bem,
+      pontos_sem_poligono$id_bem
+    )
+  ),
+  "\n"
+)
+
+# ------------------------------------------------------------
+# 5. Salvar
+# ------------------------------------------------------------
+
+st_write(
+  poligonos_validos,
+  file.path(
+    pasta_processado,
+    "IPHAN_sitios_poligonos.gpkg"
+  ),
+  delete_dsn = TRUE,
+  quiet = TRUE
+)
+
+st_write(
+  pontos_sem_poligono,
+  file.path(
+    pasta_processado,
+    "IPHAN_sitios_pontos_sem_poligono.gpkg"
+  ),
+  delete_dsn = TRUE,
+  quiet = TRUE
+)
+
+cat(
+  "\nArquivos salvos em:\n",
+  pasta_processado,
+  "\n"
+)
+
+
+# ============================================================
+# PROJETO CAAPORÃ
+# INVENTÁRIOS SELECIONADOS + COORDENADAS
+#
+# Objetivos:
+# 1. Ler a matriz final de ocorrência
+# 2. Extrair os códigos dos inventários selecionados
+# 3. Localizar a planilha de referências
+# 4. Conferir sua estrutura antes do cruzamento
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacotes
+# ------------------------------------------------------------
+
+library(readxl)
+
+
+# ------------------------------------------------------------
+# 1. Caminho da matriz final
+# ------------------------------------------------------------
+
+arquivo_matriz <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matrizes_ocorrência/",
+  "Matriz_original_ocorrencia_brasil_identificacao_recorte1ha_padronizacaobotanica.csv"
+)
+
+
+# ------------------------------------------------------------
+# 2. Ler matriz de ocorrência
+# ------------------------------------------------------------
+
+matriz <- read.csv2(
+  arquivo_matriz,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ------------------------------------------------------------
+# 3. Conferir matriz
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "MATRIZ FINAL\n",
+  "========================================\n"
+)
+
+cat(
+  "\nNúmero de linhas:",
+  nrow(matriz),
+  "\n"
+)
+
+cat(
+  "Número de colunas:",
+  ncol(matriz),
+  "\n"
+)
+
+print(
+  names(matriz)[1:min(20, ncol(matriz))]
+)
+
+
+# ------------------------------------------------------------
+# 4. Identificar automaticamente os inventários
+# ------------------------------------------------------------
+#
+# Consideramos inventários as colunas com nomes:
+# t1, t2, t116, t5531 etc.
+#
+# ------------------------------------------------------------
+
+inventarios <- names(matriz)[
+  grepl(
+    "^t[0-9]+$",
+    names(matriz),
+    ignore.case = TRUE
+  )
+]
+
+
+cat(
+  "\n========================================\n",
+  "INVENTÁRIOS SELECIONADOS\n",
+  "========================================\n"
+)
+
+cat(
+  "\nNúmero de inventários:",
+  length(inventarios),
+  "\n"
+)
+
+print(
+  head(inventarios, 30)
+)
+
+
+# ------------------------------------------------------------
+# 5. Pasta da planilha de referências
+# ------------------------------------------------------------
+
+pasta_referencias <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matriz_refencia"
+)
+
+
+# ------------------------------------------------------------
+# 6. Procurar o arquivo automaticamente
+# ------------------------------------------------------------
+
+arquivo_referencias <- list.files(
+  pasta_referencias,
+  pattern = "^caapora_base_referencias\\.(xlsx|xls)$",
+  full.names = TRUE,
+  ignore.case = TRUE
+)
+
+cat(
+  "\nArquivos de referência encontrados:\n"
+)
+
+print(
+  basename(arquivo_referencias)
+)
+
+
+if (length(arquivo_referencias) == 0) {
+  
+  # caso o nome real tenha pequena diferença
+  arquivo_referencias <- list.files(
+    pasta_referencias,
+    pattern = "caapora.*refer",
+    full.names = TRUE,
+    ignore.case = TRUE
+  )
+  
+  cat(
+    "\nBusca ampliada:\n"
+  )
+  
+  print(
+    basename(arquivo_referencias)
+  )
+}
+
+
+# ------------------------------------------------------------
+# 7. Parar se não encontrar exatamente um arquivo
+# ------------------------------------------------------------
+
+if (length(arquivo_referencias) == 0) {
+  stop("Nenhuma planilha de referências foi encontrada.")
+}
+
+if (length(arquivo_referencias) > 1) {
+  stop("Mais de uma planilha foi encontrada. Veja os nomes acima.")
+}
+
+
+# ------------------------------------------------------------
+# 8. Conferir abas do Excel
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "ABAS DA PLANILHA DE REFERÊNCIAS\n",
+  "========================================\n"
+)
+
+abas <- excel_sheets(
+  arquivo_referencias
+)
+
+print(
+  abas
+)
+
+
+# ------------------------------------------------------------
+# 9. Ler primeira aba provisoriamente
+# ------------------------------------------------------------
+
+referencias <- read_excel(
+  arquivo_referencias,
+  sheet = abas[1]
+)
+
+
+# ------------------------------------------------------------
+# 10. Conferir estrutura
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PLANILHA DE REFERÊNCIAS\n",
+  "========================================\n"
+)
+
+cat(
+  "\nNúmero de linhas:",
+  nrow(referencias),
+  "\n"
+)
+
+cat(
+  "Número de colunas:",
+  ncol(referencias),
+  "\n\n"
+)
+
+cat(
+  "Colunas disponíveis:\n"
+)
+
+print(
+  names(referencias)
+)
+
+
+cat(
+  "\nPrimeiros registros:\n"
+)
+
+print(
+  head(referencias)
+)
+
+# ============================================================
+# PROJETO CAAPORÃ
+# INVENTÁRIOS SELECIONADOS + COORDENADAS
+#
+# Objetivos:
+# 1. Cruzar inventários da matriz final com a planilha de referência
+# 2. Conferir correspondência
+# 3. Conferir coordenadas ausentes ou inválidas
+# 4. Salvar tabela final de coordenadas
+# ============================================================
+
+library(readxl)
+library(dplyr)
+
+
+# ------------------------------------------------------------
+# 1. Caminhos
+# ------------------------------------------------------------
+
+arquivo_matriz <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matrizes_ocorrência/",
+  "Matriz_original_ocorrencia_brasil_identificacao_recorte1ha_padronizacaobotanica.csv"
+)
+
+arquivo_referencias <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matriz_refencia/",
+  "caapora_base_referencias.xlsx"
+)
+
+pasta_saida <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/inventarios"
+)
+
+dir.create(
+  pasta_saida,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. Ler matriz
+# ------------------------------------------------------------
+
+matriz <- read.csv2(
+  arquivo_matriz,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ------------------------------------------------------------
+# 3. Extrair códigos dos inventários selecionados
+# ------------------------------------------------------------
+
+inventarios <- names(matriz)[
+  grepl(
+    "^t[0-9]+$",
+    names(matriz),
+    ignore.case = TRUE
+  )
+]
+
+cat(
+  "\nInventários selecionados:",
+  length(inventarios),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 4. Ler referências
+# ------------------------------------------------------------
+
+referencias <- read_excel(
+  arquivo_referencias,
+  sheet = "Referencias"
+)
+
+
+# ------------------------------------------------------------
+# 5. Padronizar código do ponto
+# ------------------------------------------------------------
+
+referencias <- referencias %>%
+  mutate(
+    ponto = trimws(
+      tolower(
+        as.character(ponto)
+      )
+    )
+  )
+
+inventarios <- trimws(
+  tolower(inventarios)
+)
+
+
+# ------------------------------------------------------------
+# 6. Conferir duplicação de códigos na referência
+# ------------------------------------------------------------
+
+duplicados <- referencias %>%
+  count(ponto) %>%
+  filter(n > 1)
+
+cat(
+  "\nCódigos duplicados na planilha de referência:",
+  nrow(duplicados),
+  "\n"
+)
+
+if (nrow(duplicados) > 0) {
+  print(duplicados)
+}
+
+
+# ------------------------------------------------------------
+# 7. Criar tabela dos inventários selecionados
+# ------------------------------------------------------------
+
+inventarios_df <- data.frame(
+  ponto = inventarios,
+  stringsAsFactors = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 8. Cruzar com coordenadas
+# ------------------------------------------------------------
+
+inventarios_coord <- inventarios_df %>%
+  left_join(
+    referencias %>%
+      select(
+        ponto,
+        latitude,
+        longitude,
+        estado,
+        municipio,
+        nome_do_local,
+        dominio,
+        `ref-autor`,
+        `ref-ano`
+      ),
+    by = "ponto"
+  )
+
+
+# ------------------------------------------------------------
+# 9. Conferir correspondência
+# ------------------------------------------------------------
+
+inventarios_coord <- inventarios_coord %>%
+  mutate(
+    encontrou_referencia =
+      !is.na(latitude) |
+      !is.na(longitude),
+    
+    coordenada_completa =
+      !is.na(latitude) &
+      !is.na(longitude),
+    
+    coordenada_valida =
+      coordenada_completa &
+      longitude >= -180 &
+      longitude <= 180 &
+      latitude >= -90 &
+      latitude <= 90
+  )
+
+
+# ------------------------------------------------------------
+# 10. Resumo
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "CONFERÊNCIA DAS COORDENADAS\n",
+  "========================================\n"
+)
+
+cat(
+  "\nTotal de inventários:",
+  nrow(inventarios_coord),
+  "\n"
+)
+
+cat(
+  "Com latitude e longitude:",
+  sum(
+    inventarios_coord$coordenada_completa
+  ),
+  "\n"
+)
+
+cat(
+  "Sem coordenada completa:",
+  sum(
+    !inventarios_coord$coordenada_completa
+  ),
+  "\n"
+)
+
+cat(
+  "Coordenadas geograficamente válidas:",
+  sum(
+    inventarios_coord$coordenada_valida
+  ),
+  "\n"
+)
+
+cat(
+  "Coordenadas inválidas:",
+  sum(
+    inventarios_coord$coordenada_completa &
+      !inventarios_coord$coordenada_valida
+  ),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 11. Inventários sem coordenadas
+# ------------------------------------------------------------
+
+sem_coordenadas <- inventarios_coord %>%
+  filter(
+    !coordenada_completa
+  )
+
+cat(
+  "\nInventários sem coordenadas:",
+  nrow(sem_coordenadas),
+  "\n"
+)
+
+if (nrow(sem_coordenadas) > 0) {
+  
+  print(
+    sem_coordenadas
+  )
+}
+
+
+# ------------------------------------------------------------
+# 12. Coordenadas inválidas
+# ------------------------------------------------------------
+
+coords_invalidas <- inventarios_coord %>%
+  filter(
+    coordenada_completa,
+    !coordenada_valida
+  )
+
+cat(
+  "\nInventários com coordenadas inválidas:",
+  nrow(coords_invalidas),
+  "\n"
+)
+
+if (nrow(coords_invalidas) > 0) {
+  
+  print(
+    coords_invalidas
+  )
+}
+
+
+# ------------------------------------------------------------
+# 13. Salvar tabela completa
+# ------------------------------------------------------------
+
+write.csv2(
+  inventarios_coord,
+  file.path(
+    pasta_saida,
+    "inventarios_selecionados_coordenadas.csv"
+  ),
+  row.names = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 14. Salvar apenas inventários válidos
+# ------------------------------------------------------------
+
+inventarios_validos <- inventarios_coord %>%
+  filter(
+    coordenada_valida
+  )
+
+write.csv2(
+  inventarios_validos,
+  file.path(
+    pasta_saida,
+    "inventarios_selecionados_coordenadas_validas.csv"
+  ),
+  row.names = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 15. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PROCESSAMENTO CONCLUÍDO\n",
+  "========================================\n"
+)
+
+cat(
+  "\nInventários válidos:",
+  nrow(inventarios_validos),
+  "de",
+  nrow(inventarios_coord),
+  "\n"
+)
+
+
+# ============================================================
+# PROJETO CAAPORÃ
+# VARIÁVEL HUMANA - ARQUEOLOGIA
+#
+# DISTÂNCIA AO SÍTIO ARQUEOLÓGICO MAIS PRÓXIMO
+#
+# Matriz: ocorrência
+#
+# Regra:
+# - usar polígono quando disponível
+# - usar ponto apenas quando o sítio não possui polígono
+# - distância final = menor entre as duas
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacotes
+# ------------------------------------------------------------
+
+library(sf)
+library(dplyr)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_iphan <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/arqueologia/IPHAN"
+)
+
+pasta_processado <- file.path(
+  pasta_iphan,
+  "02_processado"
+)
+
+pasta_variaveis <- file.path(
+  pasta_iphan,
+  "03_variaveis"
+)
+
+dir.create(
+  pasta_variaveis,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. Abrir inventários de ocorrência
+# ------------------------------------------------------------
+
+arquivo_inventarios <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/inventarios/",
+  "inventarios_selecionados_coordenadas_validas.csv"
+)
+
+inventarios <- read.csv2(
+  arquivo_inventarios,
+  stringsAsFactors = FALSE
+)
+
+cat(
+  "\nInventários:",
+  nrow(inventarios),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 3. Transformar inventários em sf
+# ------------------------------------------------------------
+
+inventarios_sf <- st_as_sf(
+  inventarios,
+  coords = c(
+    "longitude",
+    "latitude"
+  ),
+  crs = 4326,
+  remove = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 4. Abrir sítios arqueológicos
+# ------------------------------------------------------------
+
+arquivo_poligonos <- file.path(
+  pasta_processado,
+  "IPHAN_sitios_poligonos.gpkg"
+)
+
+arquivo_pontos <- file.path(
+  pasta_processado,
+  "IPHAN_sitios_pontos_sem_poligono.gpkg"
+)
+
+sitios_pol <- st_read(
+  arquivo_poligonos,
+  quiet = TRUE
+)
+
+sitios_pt <- st_read(
+  arquivo_pontos,
+  quiet = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 5. Conferência
+# ------------------------------------------------------------
+
+cat(
+  "\nPolígonos:",
+  nrow(sitios_pol),
+  "\n"
+)
+
+cat(
+  "Pontos:",
+  nrow(sitios_pt),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 6. Remover dimensão Z dos polígonos
+# ------------------------------------------------------------
+#
+# A camada de polígonos veio como XYZ.
+# Para distância horizontal, usamos apenas XY.
+#
+# ------------------------------------------------------------
+
+sitios_pol <- st_zm(
+  sitios_pol,
+  drop = TRUE,
+  what = "ZM"
+)
+
+
+# ------------------------------------------------------------
+# 7. Conferir geometrias válidas
+# ------------------------------------------------------------
+
+cat(
+  "\nGeometrias inválidas nos polígonos:",
+  sum(!st_is_valid(sitios_pol)),
+  "\n"
+)
+
+# corrigir se houver
+sitios_pol <- st_make_valid(
+  sitios_pol
+)
+
+
+# ------------------------------------------------------------
+# 8. Projetar tudo para CRS métrico
+# ------------------------------------------------------------
+#
+# SIRGAS 2000 / Brazil Polyconic
+# EPSG:5880
+#
+# ------------------------------------------------------------
+
+crs_metrico <- 5880
+
+inventarios_m <- st_transform(
+  inventarios_sf,
+  crs_metrico
+)
+
+sitios_pol_m <- st_transform(
+  sitios_pol,
+  crs_metrico
+)
+
+sitios_pt_m <- st_transform(
+  sitios_pt,
+  crs_metrico
+)
+
+
+# ------------------------------------------------------------
+# 9. Distância ao POLÍGONO mais próximo
+# ------------------------------------------------------------
+#
+# st_nearest_feature identifica apenas o objeto mais próximo,
+# evitando criar uma matriz gigantesca de distâncias.
+#
+# ------------------------------------------------------------
+
+cat(
+  "\nCalculando sítio poligonal mais próximo...\n"
+)
+
+idx_pol <- st_nearest_feature(
+  inventarios_m,
+  sitios_pol_m
+)
+
+dist_pol_m <- st_distance(
+  inventarios_m,
+  sitios_pol_m[idx_pol, ],
+  by_element = TRUE
+)
+
+dist_pol_km <- as.numeric(
+  dist_pol_m
+) / 1000
+
+
+# ------------------------------------------------------------
+# 10. Distância ao PONTO mais próximo
+# ------------------------------------------------------------
+
+cat(
+  "\nCalculando sítio pontual mais próximo...\n"
+)
+
+idx_pt <- st_nearest_feature(
+  inventarios_m,
+  sitios_pt_m
+)
+
+dist_pt_m <- st_distance(
+  inventarios_m,
+  sitios_pt_m[idx_pt, ],
+  by_element = TRUE
+)
+
+dist_pt_km <- as.numeric(
+  dist_pt_m
+) / 1000
+
+
+# ------------------------------------------------------------
+# 11. Distância final
+# ------------------------------------------------------------
+
+dist_final_km <- pmin(
+  dist_pol_km,
+  dist_pt_km,
+  na.rm = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 12. Identificar qual geometria foi a mais próxima
+# ------------------------------------------------------------
+
+tipo_sitio_mais_proximo <- ifelse(
+  dist_pol_km <= dist_pt_km,
+  "poligono",
+  "ponto"
+)
+
+
+# ------------------------------------------------------------
+# 13. Identificar o sítio mais próximo
+# ------------------------------------------------------------
+
+id_sitio_mais_proximo <- ifelse(
+  tipo_sitio_mais_proximo == "poligono",
+  sitios_pol_m$id_bem[idx_pol],
+  sitios_pt_m$id_bem[idx_pt]
+)
+
+nome_sitio_mais_proximo <- ifelse(
+  tipo_sitio_mais_proximo == "poligono",
+  sitios_pol_m$identificacao_bem[idx_pol],
+  sitios_pt_m$identificacao_bem[idx_pt]
+)
+
+classificacao_sitio_mais_proximo <- ifelse(
+  tipo_sitio_mais_proximo == "poligono",
+  sitios_pol_m$ds_classificacao[idx_pol],
+  sitios_pt_m$ds_classificacao[idx_pt]
+)
+
+
+# ------------------------------------------------------------
+# 14. Adicionar resultados à tabela
+# ------------------------------------------------------------
+
+resultado <- inventarios %>%
+  mutate(
+    distancia_poligono_km = dist_pol_km,
+    distancia_ponto_km = dist_pt_km,
+    distancia_sitio_arqueologico_km = dist_final_km,
+    tipo_geometria_sitio_mais_proximo = tipo_sitio_mais_proximo,
+    id_sitio_mais_proximo = id_sitio_mais_proximo,
+    nome_sitio_mais_proximo = nome_sitio_mais_proximo,
+    classificacao_sitio_mais_proximo =
+      classificacao_sitio_mais_proximo
+  )
+
+
+# ------------------------------------------------------------
+# 15. Estatísticas
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DISTÂNCIA AO SÍTIO ARQUEOLÓGICO\n",
+  "========================================\n"
+)
+
+print(
+  summary(
+    resultado$distancia_sitio_arqueologico_km
+  )
+)
+
+cat(
+  "\nInventários dentro de sítio arqueológico:",
+  sum(
+    resultado$distancia_sitio_arqueologico_km == 0,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+cat(
+  "\nTipo de geometria do sítio mais próximo:\n"
+)
+
+print(
+  table(
+    resultado$tipo_geometria_sitio_mais_proximo
+  )
+)
+
+
+# ------------------------------------------------------------
+# 16. Conferir maiores distâncias
+# ------------------------------------------------------------
+
+cat(
+  "\nInventários mais distantes de sítios arqueológicos:\n"
+)
+
+print(
+  resultado %>%
+    arrange(
+      desc(
+        distancia_sitio_arqueologico_km
+      )
+    ) %>%
+    select(
+      ponto,
+      estado,
+      municipio,
+      distancia_sitio_arqueologico_km,
+      nome_sitio_mais_proximo,
+      classificacao_sitio_mais_proximo
+    ) %>%
+    head(20)
+)
+
+
+# ------------------------------------------------------------
+# 17. Salvar tabela
+# ------------------------------------------------------------
+
+arquivo_saida <- file.path(
+  pasta_variaveis,
+  "ocorrencia_distancia_sitio_arqueologico_IPHAN.csv"
+)
+
+write.csv2(
+  resultado,
+  arquivo_saida,
+  row.names = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 18. Salvar também como GeoPackage
+# ------------------------------------------------------------
+
+inventarios_resultado_sf <- inventarios_sf
+
+inventarios_resultado_sf$distancia_sitio_arqueologico_km <-
+  resultado$distancia_sitio_arqueologico_km
+
+inventarios_resultado_sf$id_sitio_mais_proximo <-
+  resultado$id_sitio_mais_proximo
+
+inventarios_resultado_sf$nome_sitio_mais_proximo <-
+  resultado$nome_sitio_mais_proximo
+
+inventarios_resultado_sf$classificacao_sitio_mais_proximo <-
+  resultado$classificacao_sitio_mais_proximo
+
+st_write(
+  inventarios_resultado_sf,
+  file.path(
+    pasta_variaveis,
+    "ocorrencia_distancia_sitio_arqueologico_IPHAN.gpkg"
+  ),
+  delete_dsn = TRUE,
+  quiet = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 19. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PROCESSAMENTO CONCLUÍDO\n",
+  "========================================\n",
+  "\nArquivo final:\n",
+  arquivo_saida,
+  "\n",
+  sep = ""
+)
+
+
+summary(
+  resultado$distancia_sitio_arqueologico_km
+)
+
+table(
+  resultado$tipo_geometria_sitio_mais_proximo
+)
+sum(
+  resultado$distancia_sitio_arqueologico_km == 0
+)
+
+
+
+# ============================================================
+# CONFERÊNCIA DA DISTÂNCIA AOS SÍTIOS ARQUEOLÓGICOS
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 1. 10 inventários MAIS PRÓXIMOS
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "10 INVENTÁRIOS MAIS PRÓXIMOS\n",
+  "========================================\n"
+)
+
+mais_proximos <- resultado %>%
+  arrange(
+    distancia_sitio_arqueologico_km
+  ) %>%
+  select(
+    ponto,
+    estado,
+    municipio,
+    latitude,
+    longitude,
+    distancia_sitio_arqueologico_km,
+    tipo_geometria_sitio_mais_proximo,
+    id_sitio_mais_proximo,
+    nome_sitio_mais_proximo,
+    classificacao_sitio_mais_proximo
+  ) %>%
+  head(10)
+
+print(mais_proximos)
+
+
+# ------------------------------------------------------------
+# 2. 10 inventários MAIS DISTANTES
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "10 INVENTÁRIOS MAIS DISTANTES\n",
+  "========================================\n"
+)
+
+mais_distantes <- resultado %>%
+  arrange(
+    desc(
+      distancia_sitio_arqueologico_km
+    )
+  ) %>%
+  select(
+    ponto,
+    estado,
+    municipio,
+    latitude,
+    longitude,
+    distancia_sitio_arqueologico_km,
+    tipo_geometria_sitio_mais_proximo,
+    id_sitio_mais_proximo,
+    nome_sitio_mais_proximo,
+    classificacao_sitio_mais_proximo
+  ) %>%
+  head(10)
+
+print(
+  as.data.frame(mais_distantes)
+)
+
+
+# ------------------------------------------------------------
+# 3. Quantos estão muito próximos
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DISTÂNCIAS PEQUENAS\n",
+  "========================================\n"
+)
+
+cat(
+  "\nAté 100 m:",
+  sum(
+    resultado$distancia_sitio_arqueologico_km <= 0.1
+  ),
+  "\n"
+)
+
+cat(
+  "Até 500 m:",
+  sum(
+    resultado$distancia_sitio_arqueologico_km <= 0.5
+  ),
+  "\n"
+)
+
+cat(
+  "Até 1 km:",
+  sum(
+    resultado$distancia_sitio_arqueologico_km <= 1
+  ),
+  "\n"
+)
+
+cat(
+  "Até 5 km:",
+  sum(
+    resultado$distancia_sitio_arqueologico_km <= 5
+  ),
+  "\n"
+)
+
+cat(
+  "Até 10 km:",
+  sum(
+    resultado$distancia_sitio_arqueologico_km <= 10
+  ),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 4. Quantos estão muito distantes
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DISTÂNCIAS GRANDES\n",
+  "========================================\n"
+)
+
+cat(
+  "\nMais de 50 km:",
+  sum(
+    resultado$distancia_sitio_arqueologico_km > 50
+  ),
+  "\n"
+)
+
+cat(
+  "Mais de 100 km:",
+  sum(
+    resultado$distancia_sitio_arqueologico_km > 100
+  ),
+  "\n"
+)
+
+cat(
+  "Mais de 200 km:",
+  sum(
+    resultado$distancia_sitio_arqueologico_km > 200
+  ),
+  "\n"
+)
+
+
+# ============================================================
+# PROJETO CAAPORÃ
+# VARIÁVEL HUMANA - ARQUEOLOGIA
+#
+# DENSIDADE DE SÍTIOS ARQUEOLÓGICOS
+#
+# Matriz: ocorrência
+#
+# Buffers:
+# 10 km
+# 25 km
+# 50 km
+# 100 km
+#
+# Base arqueológica:
+# - polígonos quando disponíveis
+# - pontos apenas para sítios sem polígono
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacotes
+# ------------------------------------------------------------
+
+library(sf)
+library(dplyr)
+
+
+# ------------------------------------------------------------
+# 1. Conferir objetos
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DADOS DE ENTRADA\n",
+  "========================================\n"
+)
+
+cat(
+  "\nInventários:",
+  nrow(inventarios_m),
+  "\n"
+)
+
+cat(
+  "Sítios com polígono:",
+  nrow(sitios_pol_m),
+  "\n"
+)
+
+cat(
+  "Sítios somente como ponto:",
+  nrow(sitios_pt_m),
+  "\n"
+)
+
+cat(
+  "Total de sítios:",
+  nrow(sitios_pol_m) + nrow(sitios_pt_m),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 2. Definir buffers
+# ------------------------------------------------------------
+
+buffers_km <- c(
+  10,
+  25,
+  50,
+  100
+)
+
+cat(
+  "\nBuffers que serão calculados:",
+  paste(buffers_km, collapse = ", "),
+  "km\n"
+)
+
+
+# ------------------------------------------------------------
+# 3. Criar tabela inicial
+# ------------------------------------------------------------
+
+densidade_arqueologica <- inventarios %>%
+  select(
+    ponto,
+    latitude,
+    longitude
+  )
+
+
+# ------------------------------------------------------------
+# 4. Calcular densidade em cada escala
+# ------------------------------------------------------------
+
+for (raio_km in buffers_km) {
+  
+  
+  cat(
+    "\n========================================\n",
+    "BUFFER:",
+    raio_km,
+    "km\n",
+    "========================================\n"
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 4.1 Converter raio para metros
+  # ----------------------------------------------------------
+  
+  raio_m <- raio_km * 1000
+  
+  
+  # ----------------------------------------------------------
+  # 4.2 Criar buffers
+  # ----------------------------------------------------------
+  
+  cat(
+    "\nCriando buffers de",
+    raio_km,
+    "km...\n"
+  )
+  
+  buffers <- st_buffer(
+    inventarios_m,
+    dist = raio_m
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 4.3 Contar sítios representados por polígonos
+  # ----------------------------------------------------------
+  
+  cat(
+    "Contando sítios com geometria poligonal...\n"
+  )
+  
+  inter_pol <- st_intersects(
+    buffers,
+    sitios_pol_m
+  )
+  
+  n_pol <- lengths(
+    inter_pol
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 4.4 Contar sítios representados apenas por pontos
+  # ----------------------------------------------------------
+  
+  cat(
+    "Contando sítios representados por pontos...\n"
+  )
+  
+  inter_pt <- st_intersects(
+    buffers,
+    sitios_pt_m
+  )
+  
+  n_pt <- lengths(
+    inter_pt
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 4.5 Número total de sítios
+  # ----------------------------------------------------------
+  
+  n_total <- n_pol + n_pt
+  
+  
+  # ----------------------------------------------------------
+  # 4.6 Área do buffer em km²
+  # ----------------------------------------------------------
+  
+  area_buffer_km2 <- pi * raio_km^2
+  
+  
+  # ----------------------------------------------------------
+  # 4.7 Densidade de sítios
+  # ----------------------------------------------------------
+  
+  densidade <- n_total / area_buffer_km2
+  
+  
+  # ----------------------------------------------------------
+  # 4.8 Adicionar resultados à tabela
+  # ----------------------------------------------------------
+  
+  densidade_arqueologica[[
+    paste0(
+      "n_sitios_",
+      raio_km,
+      "km"
+    )
+  ]] <- n_total
+  
+  
+  densidade_arqueologica[[
+    paste0(
+      "densidade_sitios_",
+      raio_km,
+      "km"
+    )
+  ]] <- densidade
+  
+  
+  # ----------------------------------------------------------
+  # 4.9 Resumo da escala
+  # ----------------------------------------------------------
+  
+  cat(
+    "\nResumo do número de sítios:\n"
+  )
+  
+  print(
+    summary(
+      n_total
+    )
+  )
+  
+  cat(
+    "\nInventários sem sítios no buffer:",
+    sum(
+      n_total == 0
+    ),
+    "\n"
+  )
+  
+  cat(
+    "Inventários com pelo menos um sítio:",
+    sum(
+      n_total > 0
+    ),
+    "\n"
+  )
+  
+  cat(
+    "Máximo de sítios encontrado:",
+    max(
+      n_total
+    ),
+    "\n"
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 4.10 Liberar memória
+  # ----------------------------------------------------------
+  
+  rm(
+    buffers,
+    inter_pol,
+    inter_pt,
+    n_pol,
+    n_pt,
+    n_total,
+    densidade
+  )
+  
+  gc()
+}
+
+
+# ------------------------------------------------------------
+# 5. Conferir tabela criada
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "COLUNAS CRIADAS\n",
+  "========================================\n"
+)
+
+print(
+  names(
+    densidade_arqueologica
+  )
+)
+
+
+# ------------------------------------------------------------
+# 6. Resumo das CONTAGENS
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "RESUMO - NÚMERO DE SÍTIOS\n",
+  "========================================\n"
+)
+
+colunas_n <- grep(
+  "^n_sitios_",
+  names(densidade_arqueologica),
+  value = TRUE
+)
+
+print(
+  summary(
+    densidade_arqueologica[
+      colunas_n
+    ]
+  )
+)
+
+
+# ------------------------------------------------------------
+# 7. Resumo das DENSIDADES
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "RESUMO - DENSIDADE DE SÍTIOS\n",
+  "========================================\n"
+)
+
+colunas_densidade <- grep(
+  "^densidade_sitios_",
+  names(densidade_arqueologica),
+  value = TRUE
+)
+
+print(
+  summary(
+    densidade_arqueologica[
+      colunas_densidade
+    ]
+  )
+)
+
+
+# ------------------------------------------------------------
+# 8. Inventários sem sítios em cada escala
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "INVENTÁRIOS SEM SÍTIOS ARQUEOLÓGICOS\n",
+  "========================================\n"
+)
+
+for (raio_km in buffers_km) {
+  
+  coluna <- paste0(
+    "n_sitios_",
+    raio_km,
+    "km"
+  )
+  
+  cat(
+    raio_km,
+    "km:",
+    sum(
+      densidade_arqueologica[[coluna]] == 0
+    ),
+    "de",
+    nrow(densidade_arqueologica),
+    "\n"
+  )
+}
+
+
+# ------------------------------------------------------------
+# 9. Conferir primeiros registros
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PRIMEIROS REGISTROS\n",
+  "========================================\n"
+)
+
+print(
+  head(
+    densidade_arqueologica,
+    10
+  )
+)
+
+
+# ------------------------------------------------------------
+# 10. Salvar resultado
+# ------------------------------------------------------------
+
+arquivo_densidade <- file.path(
+  pasta_variaveis,
+  "ocorrencia_densidade_sitios_arqueologicos_IPHAN.csv"
+)
+
+write.csv2(
+  densidade_arqueologica,
+  arquivo_densidade,
+  row.names = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 11. Conferir arquivo
+# ------------------------------------------------------------
+
+if (
+  file.exists(
+    arquivo_densidade
+  )
+) {
+  
+  cat(
+    "\nArquivo salvo corretamente.\n"
+  )
+  
+} else {
+  
+  stop(
+    "O arquivo de densidade não foi salvo."
+  )
+}
+
+
+# ------------------------------------------------------------
+# 12. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DENSIDADE ARQUEOLÓGICA CONCLUÍDA\n",
+  "========================================\n",
+  "\nArquivo final:\n",
+  arquivo_densidade,
+  "\n",
+  sep = ""
+)
+
+# ============================================================
+# PROJETO CAAPORÃ
+# VARIÁVEL HUMANA - ARQUEOLOGIA
+#
+# COBERTURA / ÁREA DE SÍTIOS ARQUEOLÓGICOS
+#
+# Matriz: ocorrência
+#
+# Buffers:
+# 10 km
+# 25 km
+# 50 km
+# 100 km
+#
+# Base:
+# apenas sítios com geometria poligonal
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacotes
+# ------------------------------------------------------------
+
+library(sf)
+library(dplyr)
+
+
+# ------------------------------------------------------------
+# 1. Conferir objetos de entrada
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DADOS DE ENTRADA\n",
+  "========================================\n"
+)
+
+cat(
+  "\nInventários:",
+  nrow(inventarios_m),
+  "\n"
+)
+
+cat(
+  "Sítios poligonais:",
+  nrow(sitios_pol_m),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 2. Definir buffers
+# ------------------------------------------------------------
+
+buffers_km <- c(
+  10,
+  25,
+  50,
+  100
+)
+
+
+# ------------------------------------------------------------
+# 3. Criar tabela inicial
+# ------------------------------------------------------------
+
+cobertura_arqueologica <- inventarios %>%
+  select(
+    ponto,
+    latitude,
+    longitude
+  )
+
+
+# ------------------------------------------------------------
+# 4. Loop por escala
+# ------------------------------------------------------------
+
+for (raio_km in buffers_km) {
+  
+  cat(
+    "\n========================================\n",
+    "BUFFER:",
+    raio_km,
+    "km\n",
+    "========================================\n"
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 4.1 Criar buffers
+  # ----------------------------------------------------------
+  
+  raio_m <- raio_km * 1000
+  
+  cat(
+    "Criando buffers...\n"
+  )
+  
+  buffers <- st_buffer(
+    inventarios_m,
+    dist = raio_m
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 4.2 Área de cada buffer
+  # ----------------------------------------------------------
+  
+  area_buffer_km2 <- as.numeric(
+    st_area(
+      buffers
+    )
+  ) / 1e6
+  
+  
+  # ----------------------------------------------------------
+  # 4.3 Identificar quais polígonos intersectam cada buffer
+  # ----------------------------------------------------------
+  
+  cat(
+    "Identificando interseções...\n"
+  )
+  
+  inter <- st_intersects(
+    buffers,
+    sitios_pol_m
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 4.4 Preparar vetores de resultado
+  # ----------------------------------------------------------
+  
+  area_sitios_km2 <- numeric(
+    nrow(buffers)
+  )
+  
+  n_poligonos_intersectados <- numeric(
+    nrow(buffers)
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 4.5 Calcular área de sítios dentro de cada buffer
+  # ----------------------------------------------------------
+  
+  cat(
+    "Calculando áreas intersectadas...\n"
+  )
+  
+  for (i in seq_len(
+    nrow(buffers)
+  )) {
+    
+    ids <- inter[[i]]
+    
+    if (length(ids) == 0) {
+      
+      area_sitios_km2[i] <- 0
+      
+      n_poligonos_intersectados[i] <- 0
+      
+    } else {
+      
+      sitios_i <- sitios_pol_m[
+        ids,
+      ]
+      
+      intersecao_i <- suppressWarnings(
+        st_intersection(
+          sitios_i,
+          buffers[i, ]
+        )
+      )
+      
+      if (nrow(intersecao_i) == 0) {
+        
+        area_sitios_km2[i] <- 0
+        
+      } else {
+        
+        area_sitios_km2[i] <- sum(
+          as.numeric(
+            st_area(
+              intersecao_i
+            )
+          ),
+          na.rm = TRUE
+        ) / 1e6
+      }
+      
+      n_poligonos_intersectados[i] <-
+        length(ids)
+    }
+  }
+  
+  
+  # ----------------------------------------------------------
+  # 4.6 Porcentagem do buffer coberta por sítios
+  # ----------------------------------------------------------
+  
+  pct_cobertura <- (
+    area_sitios_km2 /
+      area_buffer_km2
+  ) * 100
+  
+  
+  # ----------------------------------------------------------
+  # 4.7 Adicionar à tabela
+  # ----------------------------------------------------------
+  
+  cobertura_arqueologica[[
+    paste0(
+      "area_sitios_km2_",
+      raio_km,
+      "km"
+    )
+  ]] <- area_sitios_km2
+  
+  cobertura_arqueologica[[
+    paste0(
+      "pct_cobertura_sitios_",
+      raio_km,
+      "km"
+    )
+  ]] <- pct_cobertura
+  
+  cobertura_arqueologica[[
+    paste0(
+      "n_poligonos_",
+      raio_km,
+      "km"
+    )
+  ]] <- n_poligonos_intersectados
+  
+  
+  # ----------------------------------------------------------
+  # 4.8 Resumo
+  # ----------------------------------------------------------
+  
+  cat(
+    "\nÁrea de sítios (km²):\n"
+  )
+  
+  print(
+    summary(
+      area_sitios_km2
+    )
+  )
+  
+  cat(
+    "\n% de cobertura arqueológica:\n"
+  )
+  
+  print(
+    summary(
+      pct_cobertura
+    )
+  )
+  
+  cat(
+    "\nInventários sem polígonos arqueológicos no buffer:",
+    sum(
+      n_poligonos_intersectados == 0
+    ),
+    "\n"
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 4.9 Liberar memória
+  # ----------------------------------------------------------
+  
+  rm(
+    buffers,
+    inter,
+    area_sitios_km2,
+    pct_cobertura,
+    n_poligonos_intersectados
+  )
+  
+  gc()
+}
+
+
+# ------------------------------------------------------------
+# 5. Conferir colunas criadas
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "COLUNAS CRIADAS\n",
+  "========================================\n"
+)
+
+print(
+  names(
+    cobertura_arqueologica
+  )
+)
+
+
+# ------------------------------------------------------------
+# 6. Resumo das porcentagens
+# ------------------------------------------------------------
+
+colunas_pct <- grep(
+  "^pct_cobertura_sitios_",
+  names(cobertura_arqueologica),
+  value = TRUE
+)
+
+cat(
+  "\n========================================\n",
+  "RESUMO - % COBERTURA ARQUEOLÓGICA\n",
+  "========================================\n"
+)
+
+print(
+  summary(
+    cobertura_arqueologica[
+      colunas_pct
+    ]
+  )
+)
+
+
+# ------------------------------------------------------------
+# 7. Inventários com zero cobertura
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "INVENTÁRIOS COM 0% DE COBERTURA\n",
+  "========================================\n"
+)
+
+for (raio_km in buffers_km) {
+  
+  coluna <- paste0(
+    "pct_cobertura_sitios_",
+    raio_km,
+    "km"
+  )
+  
+  cat(
+    raio_km,
+    "km:",
+    sum(
+      cobertura_arqueologica[[coluna]] == 0
+    ),
+    "de",
+    nrow(cobertura_arqueologica),
+    "\n"
+  )
+}
+
+
+# ------------------------------------------------------------
+# 8. Salvar resultado
+# ------------------------------------------------------------
+
+arquivo_cobertura <- file.path(
+  pasta_variaveis,
+  "ocorrencia_cobertura_sitios_arqueologicos_IPHAN.csv"
+)
+
+write.csv2(
+  cobertura_arqueologica,
+  arquivo_cobertura,
+  row.names = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 9. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "COBERTURA ARQUEOLÓGICA CONCLUÍDA\n",
+  "========================================\n",
+  "\nArquivo final:\n",
+  arquivo_cobertura,
+  "\n",
+  sep = ""
+)
