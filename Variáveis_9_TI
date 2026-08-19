@@ -1,0 +1,1968 @@
+# ============================================================
+# PROJETO CAAPORÃ
+# TERRAS INDÍGENAS - FUNAI
+#
+# Criar estrutura de pastas
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. Pasta principal
+# ------------------------------------------------------------
+
+pasta_funai <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/terras_indigenas/FUNAI"
+)
+
+# ------------------------------------------------------------
+# 2. Subpastas
+# ------------------------------------------------------------
+
+pasta_bruto <- file.path(
+  pasta_funai,
+  "01_bruto"
+)
+
+pasta_processado <- file.path(
+  pasta_funai,
+  "02_processado"
+)
+
+pasta_variaveis <- file.path(
+  pasta_funai,
+  "03_variaveis"
+)
+
+# ------------------------------------------------------------
+# 3. Criar
+# ------------------------------------------------------------
+
+dir.create(
+  pasta_bruto,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  pasta_processado,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  pasta_variaveis,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+# ------------------------------------------------------------
+# 4. Conferir
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PASTAS CRIADAS\n",
+  "========================================\n"
+)
+
+cat(
+  "\n01 - Dados brutos:\n",
+  pasta_bruto,
+  "\n"
+)
+
+cat(
+  "\n02 - Dados processados:\n",
+  pasta_processado,
+  "\n"
+)
+
+cat(
+  "\n03 - Variáveis finais:\n",
+  pasta_variaveis,
+  "\n"
+)
+
+cat(
+  "\nPasta 01 existe:",
+  dir.exists(pasta_bruto),
+  "\n"
+)
+
+cat(
+  "Pasta 02 existe:",
+  dir.exists(pasta_processado),
+  "\n"
+)
+
+cat(
+  "Pasta 03 existe:",
+  dir.exists(pasta_variaveis),
+  "\n"
+)
+# ============================================================
+# PROJETO CAAPORÃ
+# TERRAS INDÍGENAS - FUNAI
+#
+# ETAPA 1
+# Descompactar e inspecionar a base
+# com leitura em LATIN-1
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacote
+# ------------------------------------------------------------
+
+library(sf)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_funai <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/terras_indigenas/FUNAI"
+)
+
+pasta_bruto <- file.path(
+  pasta_funai,
+  "01_bruto"
+)
+
+pasta_processado <- file.path(
+  pasta_funai,
+  "02_processado"
+)
+
+pasta_variaveis <- file.path(
+  pasta_funai,
+  "03_variaveis"
+)
+
+
+# ------------------------------------------------------------
+# 2. Criar pastas, caso ainda não existam
+# ------------------------------------------------------------
+
+dir.create(
+  pasta_bruto,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  pasta_processado,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  pasta_variaveis,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 3. Localizar arquivo ZIP
+# ------------------------------------------------------------
+
+arquivo_zip <- list.files(
+  pasta_bruto,
+  pattern = "\\.zip$",
+  full.names = TRUE,
+  ignore.case = TRUE
+)
+
+cat(
+  "\n========================================\n",
+  "ARQUIVOS ZIP ENCONTRADOS\n",
+  "========================================\n"
+)
+
+print(
+  basename(arquivo_zip)
+)
+
+if (length(arquivo_zip) == 0) {
+  stop(
+    "Nenhum arquivo ZIP foi encontrado em 01_bruto."
+  )
+}
+
+if (length(arquivo_zip) > 1) {
+  stop(
+    "Mais de um ZIP foi encontrado. Confira os arquivos em 01_bruto."
+  )
+}
+
+
+# ------------------------------------------------------------
+# 4. Criar pasta para descompactar
+# ------------------------------------------------------------
+
+pasta_shapefile <- file.path(
+  pasta_bruto,
+  "terras_indigenas_shapefile"
+)
+
+dir.create(
+  pasta_shapefile,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 5. Descompactar
+# ------------------------------------------------------------
+
+cat(
+  "\nDescompactando arquivo...\n"
+)
+
+unzip(
+  arquivo_zip,
+  exdir = pasta_shapefile
+)
+
+
+# ------------------------------------------------------------
+# 6. Conferir arquivos descompactados
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "ARQUIVOS DESCOMPACTADOS\n",
+  "========================================\n"
+)
+
+print(
+  list.files(
+    pasta_shapefile,
+    recursive = TRUE
+  )
+)
+
+
+# ------------------------------------------------------------
+# 7. Localizar shapefile
+# ------------------------------------------------------------
+
+arquivo_shp <- list.files(
+  pasta_shapefile,
+  pattern = "\\.shp$",
+  full.names = TRUE,
+  recursive = TRUE,
+  ignore.case = TRUE
+)
+
+cat(
+  "\n========================================\n",
+  "SHAPEFILES ENCONTRADOS\n",
+  "========================================\n"
+)
+
+print(
+  basename(arquivo_shp)
+)
+
+if (length(arquivo_shp) == 0) {
+  stop(
+    "Nenhum arquivo .shp foi encontrado."
+  )
+}
+
+if (length(arquivo_shp) > 1) {
+  stop(
+    "Mais de um shapefile foi encontrado. Veja os nomes acima."
+  )
+}
+
+
+# ------------------------------------------------------------
+# 8. Abrir base da FUNAI em Latin-1
+# ------------------------------------------------------------
+
+cat(
+  "\nAbrindo base da FUNAI em Latin-1...\n"
+)
+
+tis <- st_read(
+  arquivo_shp,
+  quiet = TRUE,
+  options = "ENCODING=LATIN1"
+)
+
+
+# ------------------------------------------------------------
+# 9. Criar versão sem geometria
+# ------------------------------------------------------------
+
+dados_sem_geometria <- st_drop_geometry(
+  tis
+)
+
+
+# ------------------------------------------------------------
+# 10. Identificar campos textuais
+# ------------------------------------------------------------
+
+campos_texto <- names(
+  dados_sem_geometria
+)[
+  sapply(
+    dados_sem_geometria,
+    is.character
+  )
+]
+
+
+# ------------------------------------------------------------
+# 11. Conferir codificação dos textos
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "CONFERÊNCIA DE CODIFICAÇÃO\n",
+  "========================================\n"
+)
+
+for (campo in campos_texto) {
+  
+  cat(
+    "\n----------------------------------------\n",
+    "Campo:",
+    campo,
+    "\n----------------------------------------\n"
+  )
+  
+  print(
+    head(
+      unique(
+        dados_sem_geometria[[campo]]
+      ),
+      10
+    )
+  )
+}
+
+
+# ------------------------------------------------------------
+# 12. Informações gerais
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "TERRAS INDÍGENAS - FUNAI\n",
+  "========================================\n"
+)
+
+cat(
+  "\nNúmero de registros:",
+  nrow(tis),
+  "\n"
+)
+
+cat(
+  "Número de colunas:",
+  ncol(tis),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 13. Colunas disponíveis
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "COLUNAS DISPONÍVEIS\n",
+  "========================================\n"
+)
+
+print(
+  names(tis)
+)
+
+
+# ------------------------------------------------------------
+# 14. Tipos de geometria
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "TIPOS DE GEOMETRIA\n",
+  "========================================\n"
+)
+
+print(
+  table(
+    st_geometry_type(tis)
+  )
+)
+
+
+# ------------------------------------------------------------
+# 15. Sistema de coordenadas
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "CRS\n",
+  "========================================\n"
+)
+
+print(
+  st_crs(tis)
+)
+
+
+# ------------------------------------------------------------
+# 16. Extensão espacial
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "EXTENSÃO ESPACIAL\n",
+  "========================================\n"
+)
+
+print(
+  st_bbox(tis)
+)
+
+
+# ------------------------------------------------------------
+# 17. Validade das geometrias
+# ------------------------------------------------------------
+
+geometrias_validas <- st_is_valid(
+  tis
+)
+
+cat(
+  "\n========================================\n",
+  "VALIDADE DAS GEOMETRIAS\n",
+  "========================================\n"
+)
+
+cat(
+  "\nGeometrias válidas:",
+  sum(
+    geometrias_validas,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+cat(
+  "Geometrias inválidas:",
+  sum(
+    !geometrias_validas,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 18. Primeiros registros
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PRIMEIROS REGISTROS\n",
+  "========================================\n"
+)
+
+print(
+  head(
+    dados_sem_geometria,
+    10
+  )
+)
+
+
+# ------------------------------------------------------------
+# 19. Frequência dos campos textuais
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "CAMPOS TEXTUAIS\n",
+  "========================================\n"
+)
+
+for (campo in campos_texto) {
+  
+  cat(
+    "\n----------------------------------------\n",
+    campo,
+    "\n----------------------------------------\n"
+  )
+  
+  valores <- sort(
+    table(
+      dados_sem_geometria[[campo]],
+      useNA = "ifany"
+    ),
+    decreasing = TRUE
+  )
+  
+  print(
+    head(
+      valores,
+      30
+    )
+  )
+}
+
+
+# ------------------------------------------------------------
+# 20. Salvar uma cópia em GeoPackage
+# ------------------------------------------------------------
+#
+# Ainda sem aplicar filtros.
+# O objetivo aqui é apenas guardar uma versão estável
+# da base lida corretamente.
+# ------------------------------------------------------------
+
+arquivo_gpkg <- file.path(
+  pasta_processado,
+  "FUNAI_terras_indigenas_base_original.gpkg"
+)
+
+st_write(
+  tis,
+  arquivo_gpkg,
+  delete_dsn = TRUE,
+  quiet = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 21. Conferir salvamento
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "ARQUIVO PROCESSADO\n",
+  "========================================\n"
+)
+
+cat(
+  "\nGeoPackage salvo:",
+  file.exists(arquivo_gpkg),
+  "\n"
+)
+
+cat(
+  "Arquivo:\n",
+  arquivo_gpkg,
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 22. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "INSPEÇÃO CONCLUÍDA\n",
+  "========================================\n"
+)
+# ============================================================
+# PROJETO CAAPORÃ
+# TERRAS INDÍGENAS - FUNAI
+#
+# ETAPA 2
+# CORREÇÃO E VALIDAÇÃO DAS GEOMETRIAS
+# ============================================================
+
+library(sf)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_funai <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/terras_indigenas/FUNAI"
+)
+
+pasta_processado <- file.path(
+  pasta_funai,
+  "02_processado"
+)
+
+
+# ------------------------------------------------------------
+# 2. Abrir base salva anteriormente
+# ------------------------------------------------------------
+
+arquivo_funai <- file.path(
+  pasta_processado,
+  "FUNAI_terras_indigenas_base_original.gpkg"
+)
+
+tis <- st_read(
+  arquivo_funai,
+  quiet = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 3. Conferir situação antes da correção
+# ------------------------------------------------------------
+
+validade_antes <- st_is_valid(tis)
+
+cat(
+  "\n========================================\n",
+  "ANTES DA CORREÇÃO\n",
+  "========================================\n"
+)
+
+cat(
+  "\nTotal de TIs:",
+  nrow(tis),
+  "\n"
+)
+
+cat(
+  "Geometrias válidas:",
+  sum(validade_antes, na.rm = TRUE),
+  "\n"
+)
+
+cat(
+  "Geometrias inválidas:",
+  sum(!validade_antes, na.rm = TRUE),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 4. Identificar quais TIs possuem geometria inválida
+# ------------------------------------------------------------
+
+tis_invalidas <- tis[
+  !validade_antes,
+]
+
+cat(
+  "\n========================================\n",
+  "TIs COM GEOMETRIA INVÁLIDA\n",
+  "========================================\n"
+)
+
+print(
+  st_drop_geometry(
+    tis_invalidas[
+      ,
+      c(
+        "terrai_cod",
+        "terrai_nom",
+        "etnia_nome",
+        "fase_ti",
+        "modalidade"
+      )
+    ]
+  )
+)
+
+
+# ------------------------------------------------------------
+# 5. Corrigir geometrias
+# ------------------------------------------------------------
+
+cat(
+  "\nCorrigindo geometrias...\n"
+)
+
+tis_corrigidas <- st_make_valid(
+  tis
+)
+
+
+# ------------------------------------------------------------
+# 6. Conferir validade após correção
+# ------------------------------------------------------------
+
+validade_depois <- st_is_valid(
+  tis_corrigidas
+)
+
+cat(
+  "\n========================================\n",
+  "APÓS A CORREÇÃO\n",
+  "========================================\n"
+)
+
+cat(
+  "\nGeometrias válidas:",
+  sum(validade_depois, na.rm = TRUE),
+  "\n"
+)
+
+cat(
+  "Geometrias inválidas:",
+  sum(!validade_depois, na.rm = TRUE),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 7. Conferir geometrias vazias
+# ------------------------------------------------------------
+
+geometrias_vazias <- st_is_empty(
+  tis_corrigidas
+)
+
+cat(
+  "\nGeometrias vazias:",
+  sum(geometrias_vazias),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 8. Conferir tipos de geometria após correção
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "TIPOS DE GEOMETRIA APÓS CORREÇÃO\n",
+  "========================================\n"
+)
+
+print(
+  table(
+    st_geometry_type(
+      tis_corrigidas
+    )
+  )
+)
+
+
+# ------------------------------------------------------------
+# 9. Conferir se continuamos com as 663 TIs
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "CONFERÊNCIA DO NÚMERO DE TIs\n",
+  "========================================\n"
+)
+
+cat(
+  "\nAntes:",
+  nrow(tis),
+  "\n"
+)
+
+cat(
+  "Depois:",
+  nrow(tis_corrigidas),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 10. Conferir duplicação dos códigos
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "CÓDIGOS DAS TIs\n",
+  "========================================\n"
+)
+
+cat(
+  "\nCódigos únicos:",
+  length(
+    unique(
+      tis_corrigidas$terrai_cod
+    )
+  ),
+  "\n"
+)
+
+duplicados <- table(
+  tis_corrigidas$terrai_cod
+)
+
+cat(
+  "Códigos com mais de um registro:",
+  sum(duplicados > 1),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 11. Salvar base corrigida
+# ------------------------------------------------------------
+
+arquivo_corrigido <- file.path(
+  pasta_processado,
+  "FUNAI_terras_indigenas_geometrias_corrigidas.gpkg"
+)
+
+st_write(
+  tis_corrigidas,
+  arquivo_corrigido,
+  delete_dsn = TRUE,
+  quiet = TRUE
+)
+
+
+# ------------------------------------------------------------
+# 12. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "CORREÇÃO CONCLUÍDA\n",
+  "========================================\n"
+)
+
+cat(
+  "\nArquivo salvo em:\n",
+  arquivo_corrigido,
+  "\n"
+)
+
+
+# ============================================================
+# PROJETO CAAPORÃ
+# TERRAS INDÍGENAS - FUNAI
+#
+# ETAPA 3
+# DISTÂNCIA À TERRA INDÍGENA MAIS PRÓXIMA
+#
+# Inventários de ocorrência: 2.743
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacotes
+# ------------------------------------------------------------
+
+library(sf)
+library(dplyr)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_funai <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/terras_indigenas/FUNAI"
+)
+
+pasta_processado <- file.path(
+  pasta_funai,
+  "02_processado"
+)
+
+pasta_variaveis <- file.path(
+  pasta_funai,
+  "03_variaveis"
+)
+
+dir.create(
+  pasta_variaveis,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 2. Arquivo das TIs corrigidas
+# ------------------------------------------------------------
+
+arquivo_tis <- file.path(
+  pasta_processado,
+  "FUNAI_terras_indigenas_geometrias_corrigidas.gpkg"
+)
+
+tis <- st_read(
+  arquivo_tis,
+  quiet = TRUE
+)
+
+cat(
+  "\nTIs carregadas:",
+  nrow(tis),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 3. Abrir coordenadas dos inventários selecionados
+# ------------------------------------------------------------
+
+arquivo_inventarios <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/inventarios/",
+  "inventarios_selecionados_coordenadas_validas.csv"
+)
+
+inventarios <- read.csv2(
+  arquivo_inventarios,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+cat(
+  "\nInventários carregados:",
+  nrow(inventarios),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 4. Conferir coordenadas
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "CONFERÊNCIA DOS INVENTÁRIOS\n",
+  "========================================\n"
+)
+
+cat(
+  "\nTotal:",
+  nrow(inventarios),
+  "\n"
+)
+
+cat(
+  "Latitude ausente:",
+  sum(is.na(inventarios$latitude)),
+  "\n"
+)
+
+cat(
+  "Longitude ausente:",
+  sum(is.na(inventarios$longitude)),
+  "\n"
+)
+
+cat(
+  "Códigos duplicados:",
+  sum(duplicated(inventarios$ponto)),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 5. Transformar inventários em pontos
+# ------------------------------------------------------------
+
+inventarios_sf <- st_as_sf(
+  inventarios,
+  coords = c(
+    "longitude",
+    "latitude"
+  ),
+  crs = 4326,
+  remove = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 6. Padronizar CRS geográfico
+# ------------------------------------------------------------
+#
+# As TIs estão originalmente em SIRGAS 2000.
+# Os inventários estão em WGS84.
+#
+# Primeiro colocamos ambos em SIRGAS 2000.
+# ------------------------------------------------------------
+
+inventarios_sf <- st_transform(
+  inventarios_sf,
+  4674
+)
+
+tis <- st_transform(
+  tis,
+  4674
+)
+
+
+# ------------------------------------------------------------
+# 7. Identificar inventários que estão dentro de TIs
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "INVENTÁRIOS DENTRO DE TIs\n",
+  "========================================\n"
+)
+
+dentro_ti <- lengths(
+  st_intersects(
+    inventarios_sf,
+    tis
+  )
+) > 0
+
+cat(
+  "\nInventários dentro de alguma TI:",
+  sum(dentro_ti),
+  "\n"
+)
+
+cat(
+  "Inventários fora de TIs:",
+  sum(!dentro_ti),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 8. Projeção métrica para cálculo das distâncias
+# ------------------------------------------------------------
+#
+# EPSG:5880 = SIRGAS 2000 / Brazil Polyconic
+#
+# Usaremos a projeção métrica para que as distâncias
+# sejam calculadas em metros.
+# ------------------------------------------------------------
+
+inventarios_m <- st_transform(
+  inventarios_sf,
+  5880
+)
+
+tis_m <- st_transform(
+  tis,
+  5880
+)
+
+
+# ------------------------------------------------------------
+# 9. Encontrar a TI mais próxima
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "CALCULANDO TI MAIS PRÓXIMA\n",
+  "========================================\n"
+)
+
+indice_ti_proxima <- st_nearest_feature(
+  inventarios_m,
+  tis_m
+)
+
+cat(
+  "\nTIs mais próximas identificadas.\n"
+)
+
+
+# ------------------------------------------------------------
+# 10. Calcular distância até a TI mais próxima
+# ------------------------------------------------------------
+
+cat(
+  "\nCalculando distâncias...\n"
+)
+
+distancia_m <- st_distance(
+  inventarios_m,
+  tis_m[indice_ti_proxima, ],
+  by_element = TRUE
+)
+
+distancia_km <- as.numeric(
+  distancia_m
+) / 1000
+
+
+# ------------------------------------------------------------
+# 11. Garantir distância zero para inventários dentro de TI
+# ------------------------------------------------------------
+
+distancia_km[
+  dentro_ti
+] <- 0
+
+
+# ------------------------------------------------------------
+# 12. Recuperar informações da TI mais próxima
+# ------------------------------------------------------------
+
+ti_proxima <- st_drop_geometry(
+  tis[
+    indice_ti_proxima,
+  ]
+)
+
+
+# ------------------------------------------------------------
+# 13. Criar tabela final
+# ------------------------------------------------------------
+
+resultado_ti <- inventarios %>%
+  mutate(
+    
+    dentro_terra_indigena =
+      dentro_ti,
+    
+    distancia_ti_mais_proxima_km =
+      distancia_km,
+    
+    codigo_ti_mais_proxima =
+      ti_proxima$terrai_cod,
+    
+    nome_ti_mais_proxima =
+      ti_proxima$terrai_nom,
+    
+    etnia_ti_mais_proxima =
+      ti_proxima$etnia_nome,
+    
+    fase_ti_mais_proxima =
+      ti_proxima$fase_ti,
+    
+    modalidade_ti_mais_proxima =
+      ti_proxima$modalidade
+  )
+
+
+# ------------------------------------------------------------
+# 14. Estatísticas das distâncias
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DISTÂNCIA À TI MAIS PRÓXIMA\n",
+  "========================================\n"
+)
+
+print(
+  summary(
+    resultado_ti$distancia_ti_mais_proxima_km
+  )
+)
+
+
+# ------------------------------------------------------------
+# 15. Número de inventários dentro de TIs
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DENTRO / FORA DE TI\n",
+  "========================================\n"
+)
+
+print(
+  table(
+    resultado_ti$dentro_terra_indigena,
+    useNA = "ifany"
+  )
+)
+
+
+# ------------------------------------------------------------
+# 16. Distâncias pequenas
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PROXIMIDADE ÀS TIs\n",
+  "========================================\n"
+)
+
+cat(
+  "\nDentro de TI:",
+  sum(
+    resultado_ti$dentro_terra_indigena
+  ),
+  "\n"
+)
+
+cat(
+  "Até 1 km:",
+  sum(
+    resultado_ti$distancia_ti_mais_proxima_km <= 1
+  ),
+  "\n"
+)
+
+cat(
+  "Até 5 km:",
+  sum(
+    resultado_ti$distancia_ti_mais_proxima_km <= 5
+  ),
+  "\n"
+)
+
+cat(
+  "Até 10 km:",
+  sum(
+    resultado_ti$distancia_ti_mais_proxima_km <= 10
+  ),
+  "\n"
+)
+
+cat(
+  "Até 25 km:",
+  sum(
+    resultado_ti$distancia_ti_mais_proxima_km <= 25
+  ),
+  "\n"
+)
+
+cat(
+  "Até 50 km:",
+  sum(
+    resultado_ti$distancia_ti_mais_proxima_km <= 50
+  ),
+  "\n"
+)
+
+cat(
+  "Até 100 km:",
+  sum(
+    resultado_ti$distancia_ti_mais_proxima_km <= 100
+  ),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 17. Distâncias grandes
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "DISTÂNCIAS GRANDES\n",
+  "========================================\n"
+)
+
+cat(
+  "\nMais de 50 km:",
+  sum(
+    resultado_ti$distancia_ti_mais_proxima_km > 50
+  ),
+  "\n"
+)
+
+cat(
+  "Mais de 100 km:",
+  sum(
+    resultado_ti$distancia_ti_mais_proxima_km > 100
+  ),
+  "\n"
+)
+
+cat(
+  "Mais de 200 km:",
+  sum(
+    resultado_ti$distancia_ti_mais_proxima_km > 200
+  ),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 18. Dez inventários mais próximos
+# ------------------------------------------------------------
+
+mais_proximos <- resultado_ti %>%
+  arrange(
+    distancia_ti_mais_proxima_km
+  ) %>%
+  select(
+    ponto,
+    estado,
+    municipio,
+    latitude,
+    longitude,
+    dentro_terra_indigena,
+    distancia_ti_mais_proxima_km,
+    codigo_ti_mais_proxima,
+    nome_ti_mais_proxima,
+    etnia_ti_mais_proxima,
+    fase_ti_mais_proxima,
+    modalidade_ti_mais_proxima
+  ) %>%
+  head(10)
+
+cat(
+  "\n========================================\n",
+  "10 INVENTÁRIOS MAIS PRÓXIMOS\n",
+  "========================================\n"
+)
+
+print(
+  as.data.frame(
+    mais_proximos
+  )
+)
+
+
+# ------------------------------------------------------------
+# 19. Dez inventários mais distantes
+# ------------------------------------------------------------
+
+mais_distantes <- resultado_ti %>%
+  arrange(
+    desc(
+      distancia_ti_mais_proxima_km
+    )
+  ) %>%
+  select(
+    ponto,
+    estado,
+    municipio,
+    latitude,
+    longitude,
+    distancia_ti_mais_proxima_km,
+    codigo_ti_mais_proxima,
+    nome_ti_mais_proxima,
+    etnia_ti_mais_proxima,
+    fase_ti_mais_proxima,
+    modalidade_ti_mais_proxima
+  ) %>%
+  head(10)
+
+cat(
+  "\n========================================\n",
+  "10 INVENTÁRIOS MAIS DISTANTES\n",
+  "========================================\n"
+)
+
+print(
+  as.data.frame(
+    mais_distantes
+  )
+)
+
+
+# ------------------------------------------------------------
+# 20. Salvar resultado
+# ------------------------------------------------------------
+
+arquivo_saida <- file.path(
+  pasta_variaveis,
+  "inventarios_distancia_terra_indigena_mais_proxima.csv"
+)
+
+write.csv2(
+  resultado_ti,
+  arquivo_saida,
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ------------------------------------------------------------
+# 21. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "PROCESSAMENTO CONCLUÍDO\n",
+  "========================================\n"
+)
+
+cat(
+  "\nInventários processados:",
+  nrow(resultado_ti),
+  "\n"
+)
+
+cat(
+  "\nArquivo salvo em:\n",
+  arquivo_saida,
+  "\n"
+)
+
+
+# ============================================================
+# PROJETO CAAPORÃ
+# TERRAS INDÍGENAS - FUNAI
+#
+# ETAPA 4
+# COBERTURA POR TERRAS INDÍGENAS
+#
+# Matriz: ocorrência
+# Buffers: 10, 25, 50 e 100 km
+#
+# Métrica principal:
+# % da área do buffer ocupada por Terras Indígenas
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 0. Pacotes
+# ------------------------------------------------------------
+
+library(sf)
+library(dplyr)
+
+
+# ------------------------------------------------------------
+# 1. Pastas
+# ------------------------------------------------------------
+
+pasta_funai <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/terras_indigenas/FUNAI"
+)
+
+pasta_processado <- file.path(
+  pasta_funai,
+  "02_processado"
+)
+
+pasta_variaveis <- file.path(
+  pasta_funai,
+  "03_variaveis"
+)
+
+
+# ------------------------------------------------------------
+# 2. Abrir TIs corrigidas
+# ------------------------------------------------------------
+
+arquivo_tis <- file.path(
+  pasta_processado,
+  "FUNAI_terras_indigenas_geometrias_corrigidas.gpkg"
+)
+
+tis <- st_read(
+  arquivo_tis,
+  quiet = TRUE
+)
+
+cat(
+  "\nTIs carregadas:",
+  nrow(tis),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 3. Abrir inventários
+# ------------------------------------------------------------
+
+arquivo_inventarios <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "variaveis_humanas/inventarios/",
+  "inventarios_selecionados_coordenadas_validas.csv"
+)
+
+inventarios <- read.csv2(
+  arquivo_inventarios,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+cat(
+  "Inventários carregados:",
+  nrow(inventarios),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 4. Transformar inventários em sf
+# ------------------------------------------------------------
+
+inventarios_sf <- st_as_sf(
+  inventarios,
+  coords = c(
+    "longitude",
+    "latitude"
+  ),
+  crs = 4326,
+  remove = FALSE
+)
+
+
+# ------------------------------------------------------------
+# 5. Projetar para CRS métrico
+# ------------------------------------------------------------
+#
+# SIRGAS 2000 / Brazil Polyconic
+# EPSG:5880
+#
+# ------------------------------------------------------------
+
+inventarios_m <- st_transform(
+  inventarios_sf,
+  5880
+)
+
+tis_m <- st_transform(
+  tis,
+  5880
+)
+
+
+# ------------------------------------------------------------
+# 6. Unir geometrias das TIs
+# ------------------------------------------------------------
+# ------------------------------------------------------------
+# 6. Ajustar precisão das geometrias projetadas
+# ------------------------------------------------------------
+
+cat(
+  "\nPreparando geometrias das TIs...\n"
+)
+
+tis_m <- st_make_valid(
+  tis_m
+)
+
+# precisão de 1 metro
+tis_m <- st_set_precision(
+  tis_m,
+  1
+)
+
+tis_m <- st_make_valid(
+  tis_m
+)
+
+cat(
+  "Geometrias inválidas após projeção:",
+  sum(
+    !st_is_valid(tis_m)
+  ),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# 7. Definir buffers
+# ------------------------------------------------------------
+
+buffers_km <- c(
+  10,
+  25,
+  50,
+  100
+)
+
+
+# ------------------------------------------------------------
+# 8. Criar tabela de resultado
+# ------------------------------------------------------------
+
+cobertura_tis <- inventarios %>%
+  select(
+    ponto,
+    latitude,
+    longitude
+  )
+
+
+# ------------------------------------------------------------
+# 9. Calcular cobertura para cada escala
+# ------------------------------------------------------------
+
+for (raio_km in buffers_km) {
+  
+  cat(
+    "\n========================================\n",
+    "BUFFER:",
+    raio_km,
+    "km\n",
+    "========================================\n"
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 9.1 Criar buffers
+  # ----------------------------------------------------------
+  
+  raio_m <- raio_km * 1000
+  
+  cat(
+    "Criando buffers...\n"
+  )
+  
+  buffers <- st_buffer(
+    inventarios_m,
+    dist = raio_m
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 9.2 Área dos buffers
+  # ----------------------------------------------------------
+  
+  area_buffer_km2 <- as.numeric(
+    st_area(
+      buffers
+    )
+  ) / 1e6
+  
+  
+  # ----------------------------------------------------------
+  # 9.3 Identificar TIs que intersectam cada buffer
+  # ----------------------------------------------------------
+  
+  cat(
+    "Identificando TIs no entorno dos inventários...\n"
+  )
+  
+  inter_ti <- st_intersects(
+    buffers,
+    tis_m
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 9.4 Vetores de resultado
+  # ----------------------------------------------------------
+  
+  area_ti_km2 <- numeric(
+    nrow(buffers)
+  )
+  
+  n_tis_buffer <- integer(
+    nrow(buffers)
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 9.5 Calcular área ocupada por TIs
+  # ----------------------------------------------------------
+  
+  cat(
+    "Calculando cobertura territorial indígena...\n"
+  )
+  
+  for (i in seq_len(
+    nrow(buffers)
+  )) {
+    
+    ids <- inter_ti[[i]]
+    
+    n_tis_buffer[i] <- length(ids)
+    
+    
+    # nenhuma TI no buffer
+    if (length(ids) == 0) {
+      
+      area_ti_km2[i] <- 0
+      
+      next
+    }
+    
+    
+    # --------------------------------------------------------
+    # Selecionar apenas TIs relevantes para este inventário
+    # --------------------------------------------------------
+    
+    tis_i <- tis_m[
+      ids,
+    ]
+    
+    
+    # --------------------------------------------------------
+    # Recortar as TIs pelo buffer
+    # --------------------------------------------------------
+    
+    partes <- suppressWarnings(
+      st_intersection(
+        st_geometry(tis_i),
+        st_geometry(buffers[i, ])
+      )
+    )
+    
+    
+    if (length(partes) == 0) {
+      
+      area_ti_km2[i] <- 0
+      
+      next
+    }
+    
+    
+    # --------------------------------------------------------
+    # Corrigir novamente as partes resultantes
+    # --------------------------------------------------------
+    
+    partes <- st_make_valid(
+      partes
+    )
+    
+    
+    # --------------------------------------------------------
+    # Evitar dupla contagem quando houver TIs sobrepostas
+    # --------------------------------------------------------
+    
+    if (length(partes) == 1) {
+      
+      area_ti_km2[i] <- as.numeric(
+        st_area(
+          partes
+        )
+      ) / 1e6
+      
+    } else {
+      
+      partes_unidas <- tryCatch(
+        
+        st_union(
+          partes
+        ),
+        
+        error = function(e) {
+          
+          # nova tentativa com precisão ajustada
+          partes2 <- st_set_precision(
+            partes,
+            1
+          )
+          
+          partes2 <- st_make_valid(
+            partes2
+          )
+          
+          st_union(
+            partes2
+          )
+        }
+      )
+      
+      
+      area_ti_km2[i] <- sum(
+        as.numeric(
+          st_area(
+            partes_unidas
+          )
+        ),
+        na.rm = TRUE
+      ) / 1e6
+    }
+  }
+  
+  
+  # ----------------------------------------------------------
+  # 9.6 Porcentagem de cobertura
+  # ----------------------------------------------------------
+  
+  pct_ti <- (
+    area_ti_km2 /
+      area_buffer_km2
+  ) * 100
+  
+  
+  # ----------------------------------------------------------
+  # 9.7 Adicionar à tabela
+  # ----------------------------------------------------------
+  
+  cobertura_tis[[
+    paste0(
+      "area_ti_km2_",
+      raio_km,
+      "km"
+    )
+  ]] <- area_ti_km2
+  
+  
+  cobertura_tis[[
+    paste0(
+      "pct_cobertura_ti_",
+      raio_km,
+      "km"
+    )
+  ]] <- pct_ti
+  
+  
+  cobertura_tis[[
+    paste0(
+      "n_tis_",
+      raio_km,
+      "km"
+    )
+  ]] <- n_tis_buffer
+  
+  
+  # ----------------------------------------------------------
+  # 9.8 Resumo
+  # ----------------------------------------------------------
+  
+  cat(
+    "\nÁrea coberta por TIs (km²):\n"
+  )
+  
+  print(
+    summary(
+      area_ti_km2
+    )
+  )
+  
+  
+  cat(
+    "\n% de cobertura por TIs:\n"
+  )
+  
+  print(
+    summary(
+      pct_ti
+    )
+  )
+  
+  
+  cat(
+    "\nInventários sem TI no buffer:",
+    sum(
+      n_tis_buffer == 0
+    ),
+    "\n"
+  )
+  
+  
+  cat(
+    "Número máximo de TIs em um buffer:",
+    max(
+      n_tis_buffer
+    ),
+    "\n"
+  )
+  
+  
+  # ----------------------------------------------------------
+  # 9.9 Liberar memória
+  # ----------------------------------------------------------
+  
+  rm(
+    buffers,
+    inter_ti,
+    area_buffer_km2,
+    area_ti_km2,
+    pct_ti,
+    n_tis_buffer
+  )
+  
+  gc()
+}
+
+
+# ------------------------------------------------------------
+# 10. Conferir colunas criadas
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "COLUNAS CRIADAS\n",
+  "========================================\n"
+)
+
+print(
+  names(
+    cobertura_tis
+  )
+)
+
+
+# ------------------------------------------------------------
+# 11. Resumo das porcentagens
+# ------------------------------------------------------------
+
+colunas_pct <- grep(
+  "^pct_cobertura_ti_",
+  names(cobertura_tis),
+  value = TRUE
+)
+
+cat(
+  "\n========================================\n",
+  "RESUMO - % COBERTURA POR TIs\n",
+  "========================================\n"
+)
+
+print(
+  summary(
+    cobertura_tis[
+      colunas_pct
+    ]
+  )
+)
+
+
+# ------------------------------------------------------------
+# 12. Inventários com zero cobertura
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "INVENTÁRIOS COM 0% DE COBERTURA\n",
+  "========================================\n"
+)
+
+for (raio_km in buffers_km) {
+  
+  coluna <- paste0(
+    "pct_cobertura_ti_",
+    raio_km,
+    "km"
+  )
+  
+  cat(
+    raio_km,
+    "km:",
+    sum(
+      cobertura_tis[[coluna]] == 0
+    ),
+    "de",
+    nrow(cobertura_tis),
+    "\n"
+  )
+}
+
+
+# ------------------------------------------------------------
+# 13. Salvar
+# ------------------------------------------------------------
+
+arquivo_saida <- file.path(
+  pasta_variaveis,
+  "ocorrencia_cobertura_terras_indigenas_FUNAI.csv"
+)
+
+write.csv2(
+  cobertura_tis,
+  arquivo_saida,
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ------------------------------------------------------------
+# 14. Final
+# ------------------------------------------------------------
+
+cat(
+  "\n========================================\n",
+  "COBERTURA POR TIs CONCLUÍDA\n",
+  "========================================\n"
+)
+
+cat(
+  "\nArquivo final:\n",
+  arquivo_saida,
+  "\n"
+  
