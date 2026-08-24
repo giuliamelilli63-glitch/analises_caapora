@@ -1,485 +1,1067 @@
-# Ler a matriz de ocorrência
+# ============================================================
+# SCRIPT 01
+# FILTRO ESPACIAL DOS INVENTÁRIOS DO BRASIL
+# MATRIZ DE OCORRÊNCIA
+#
+# Critério:
+#   - usar longitude e latitude da base de referências
+#   - manter somente inventários localizados dentro do Brasil
+#
+# Após o filtro:
+#   - remover espécies sem ocorrência
+#   - remover temporariamente:
+#       familia
+#       genero
+#       identificacao
+#
+# Resultado:
+#   especie + inventários brasileiros
+# ============================================================
+
+
+# ============================================================
+# 0. PACOTES
+# ============================================================
+
+library(sf)
+library(readxl)
+
+
+# ============================================================
+# 1. CAMINHOS
+# ============================================================
+
+pasta_caapora <- "C:/Users/giuli/OneDrive/Documentos/Caapora"
+
+
+# ------------------------------------------------------------
+# Matriz original de ocorrência
+# ------------------------------------------------------------
+
+arquivo_matriz <- file.path(
+  pasta_caapora,
+  "Matrizes_ocorrência",
+  "Matriz_original_ocorrencia.csv"
+)
+
+
+# ------------------------------------------------------------
+# Base de referência dos inventários
+# ------------------------------------------------------------
+
+arquivo_metadados <- file.path(
+  pasta_caapora,
+  "Matriz_refencia",
+  "caapora_base_referencias.xlsx"
+)
+
+
+# ------------------------------------------------------------
+# Pasta do shapefile do Brasil
+# ------------------------------------------------------------
+
+pasta_shape_brasil <- file.path(
+  pasta_caapora,
+  "shapefiles",
+  "BR_Pais_2025"
+)
+
+
+# ------------------------------------------------------------
+# Arquivo de saída
+# ------------------------------------------------------------
+
+arquivo_saida <- file.path(
+  pasta_caapora,
+  "Matrizes_ocorrência",
+  "Matriz_original_ocorrencia_brasil.csv"
+)
+
+
+# ============================================================
+# 2. CONFERIR ARQUIVOS
+# ============================================================
+
+if (!file.exists(arquivo_matriz)) {
+  
+  stop(
+    paste0(
+      "Matriz não encontrada:\n",
+      arquivo_matriz
+    )
+  )
+}
+
+
+if (!file.exists(arquivo_metadados)) {
+  
+  stop(
+    paste0(
+      "Base de referências não encontrada:\n",
+      arquivo_metadados
+    )
+  )
+}
+
+
+if (!dir.exists(pasta_shape_brasil)) {
+  
+  stop(
+    paste0(
+      "Pasta do shapefile do Brasil não encontrada:\n",
+      pasta_shape_brasil
+    )
+  )
+}
+
+
+# ============================================================
+# 3. LOCALIZAR AUTOMATICAMENTE O SHAPEFILE DO BRASIL
+# ============================================================
+
+arquivos_shp <- list.files(
+  pasta_shape_brasil,
+  pattern = "\\.shp$",
+  full.names = TRUE,
+  ignore.case = TRUE
+)
+
+
+if (length(arquivos_shp) == 0) {
+  
+  stop(
+    paste0(
+      "Nenhum arquivo .shp encontrado em:\n",
+      pasta_shape_brasil
+    )
+  )
+}
+
+
+if (length(arquivos_shp) > 1) {
+  
+  cat(
+    "\nATENÇÃO: mais de um shapefile encontrado:\n"
+  )
+  
+  print(
+    arquivos_shp
+  )
+  
+  stop(
+    "Existe mais de um .shp na pasta. Verifique qual representa o Brasil."
+  )
+}
+
+
+arquivo_brasil <- arquivos_shp[1]
+
+
+cat(
+  "\nShapefile utilizado:\n",
+  arquivo_brasil,
+  "\n"
+)
+
+
+# ============================================================
+# 4. LER MATRIZ DE OCORRÊNCIA
+# ============================================================
+
 dados <- read.csv2(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_ocorrência/Matriz_original_ocorrencia.csv",
+  arquivo_matriz,
   header = TRUE,
   stringsAsFactors = FALSE,
   check.names = FALSE,
   fileEncoding = "latin1"
 )
 
-# Inventários que serão excluídos
-inventarios_excluir <- scan(
-  text = "
-t37
-t38
-t39
-t152
-t693
-t694
-t698
-t699
-t706
-t707
-t708
-t709
-t710
-t1944
-t1945
-t2109
-t2110
-t2112
-t2113
-t2114
-t2115
-t2116
-t2355
-t2356
-t2357
-t2358
-t2359
-t2360
-t2364
-t2365
-t2366
-t2367
-t2369
-t2370
-t2371
-t2372
-t2373
-t2376
-t2379
-t2380
-t2382
-t2383
-t2384
-t2385
-t2386
-t2387
-t2388
-t2389
-t2390
-t2391
-t2392
-t2393
-t2394
-t2395
-t2396
-t2397
-t2398
-t2518
-t2519
-t2520
-t2521
-t2522
-t2523
-t2524
-t2525
-t2526
-t2527
-t2528
-t2529
-t2530
-t2531
-t2532
-t2533
-t2534
-t2535
-t2536
-t2537
-t2538
-t2644
-t2645
-t2646
-t2647
-t2648
-t2649
-t2650
-t2651
-t2652
-t2653
-t2654
-t2655
-t2656
-t2657
-t2658
-t2659
-t2660
-t2661
-t2662
-t2663
-t2664
-t2665
-t2666
-t2667
-t2668
-t2669
-t2670
-t2671
-t2672
-t2673
-t2674
-t2675
-t2676
-t2677
-t2678
-t2679
-t2680
-t2681
-t2682
-t2683
-t2684
-t2685
-t2686
-t2892
-t2893
-t2894
-t2895
-t2896
-t2897
-t2898
-t2899
-t2900
-t2901
-t2902
-t2903
-t2904
-t2905
-t2906
-t2907
-t2908
-t2909
-t2910
-t2911
-t2912
-t2913
-t2914
-t2915
-t2916
-t2917
-t2918
-t2919
-t2920
-t2921
-t2922
-t2923
-t2924
-t2925
-t2926
-t2927
-t2928
-t2929
-t2930
-t2931
-t2932
-t2933
-t2934
-t2935
-t2936
-t2937
-t2938
-t2939
-t2940
-t2941
-t2942
-t3014
-t3015
-t3016
-t3017
-t3018
-t3019
-t3020
-t3021
-t3022
-t3023
-t3024
-t3025
-t3026
-t3027
-t3028
-t3029
-t3030
-t3031
-t3032
-t3033
-t3034
-t3035
-t3036
-t3037
-t3038
-t3039
-t3040
-t3041
-t3042
-t3043
-t3044
-t3045
-t3046
-t3047
-t3048
-t3049
-t3050
-t3051
-t3052
-t3053
-t3054
-t3055
-t3056
-t3057
-t3058
-t3059
-t3060
-t3061
-t3062
-t3063
-t3064
-t3065
-t3066
-t3067
-t3068
-t3069
-t3070
-t3071
-t3072
-t3073
-t3074
-t3075
-t3076
-t3077
-t3078
-t3079
-t3080
-t3081
-t3082
-t3083
-t3084
-t4490
-t4491
-t4492
-t4493
-t4494
-t4495
-t4496
-t4497
-t4498
-t4499
-t4500
-t4507
-t4508
-t4509
-t4510
-t4511
-t4512
-t4513
-t4514
-t4515
-t4516
-t4518
-t4519
-t4524
-t4525
-t4526
-t4527
-t4528
-t4529
-t4530
-t4533
-t4534
-t4535
-t4536
-t4537
-t4538
-t4539
-t4540
-t4585
-t4586
-t4589
-t4599
-t4600
-t4605
-t4613
-t4620
-t4635
-t4645
-t4646
-t4670
-t4671
-t4677
-t4679
-t4716
-t4717
-t4718
-t4719
-t4720
-t4721
-t4722
-t4731
-t4732
-t4733
-t4734
-t4735
-t4736
-t4737
-t4738
-t4744
-t4745
-t4746
-t4747
-t4748
-t4749
-t4750
-t4762
-t4763
-t4764
-t4765
-t4767
-t4768
-t4770
-t4771
-t4772
-t4773
-t4776
-t4778
-t4779
-t4780
-t4781
-t4782
-t4785
-t4786
-t4787
-t4788
-t4789
-t4790
-t4791
-t4792
-t4793
-t4794
-t4795
-t4796
-t4799
-t4800
-t4801
-t4802
-t4803
-t4804
-t4805
-t4806
-t4807
-t4808
-t4809
-t4810
-t4811
-t4812
-t4828
-t4831
-t4832
-t4833
-t4834
-t4835
-t4836
-t4837
-t4838
-t4839
-t4840
-t4841
-t4842
-t4843
-t4844
-t4845
-t4846
-t4847
-t4848
-t4849
-",
-  what = "character",
-  quiet = TRUE
+
+names(dados) <- trimws(
+  names(dados)
 )
 
-# Remover códigos repetidos
-inventarios_excluir <- unique(inventarios_excluir)
 
-# As quatro primeiras colunas são informações taxonômicas
-colunas_informacao <- colnames(dados)[1:4]
-
-# Os inventários começam na quinta coluna
-colunas_inventarios <- colnames(dados)[5:ncol(dados)]
-
-# Verificar os inventários encontrados
-inventarios_encontrados <- intersect(
-  inventarios_excluir,
-  colunas_inventarios
+cat(
+  "\n============================================\n"
 )
 
-inventarios_nao_encontrados <- setdiff(
-  inventarios_excluir,
-  colunas_inventarios
+cat(
+  "MATRIZ ORIGINAL\n"
 )
 
-# Mostrar os inventários não encontrados
-if (length(inventarios_nao_encontrados) > 0) {
-  cat(
-    "Inventários não encontrados na matriz:\n",
-    paste(inventarios_nao_encontrados, collapse = ", "),
-    "\n\n"
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Linhas:",
+  nrow(dados),
+  "\n"
+)
+
+cat(
+  "Colunas:",
+  ncol(dados),
+  "\n"
+)
+
+
+# ============================================================
+# 5. CONFERIR COLUNAS TAXONÔMICAS
+# ============================================================
+
+colunas_taxonomicas <- c(
+  "familia",
+  "genero",
+  "especie",
+  "identificacao"
+)
+
+
+faltando <- setdiff(
+  colunas_taxonomicas,
+  names(dados)
+)
+
+
+if (length(faltando) > 0) {
+  
+  stop(
+    paste0(
+      "Colunas não encontradas na matriz: ",
+      paste(
+        faltando,
+        collapse = ", "
+      )
+    )
   )
 }
 
-# Excluir somente as colunas dos inventários indicados
-dados_filtrados <- dados[
-  ,
-  !colnames(dados) %in% inventarios_encontrados,
-  drop = FALSE
-]
 
-# Selecionar somente as colunas dos inventários restantes
-colunas_inventarios_restantes <- setdiff(
-  colunas_inventarios,
-  inventarios_encontrados
+# ============================================================
+# 6. IDENTIFICAR INVENTÁRIOS NA MATRIZ
+# ============================================================
+
+inventarios_matriz <- grep(
+  "^t[0-9]+$",
+  names(dados),
+  value = TRUE
 )
 
-matriz_ocorrencia_restante <- dados_filtrados[
+
+if (length(inventarios_matriz) == 0) {
+  
+  stop(
+    "Nenhuma coluna de inventário foi encontrada."
+  )
+}
+
+
+cat(
+  "\nInventários encontrados na matriz:",
+  length(inventarios_matriz),
+  "\n"
+)
+
+
+# ============================================================
+# 7. LER BASE DE REFERÊNCIAS
+# ============================================================
+
+metadados <- read_excel(
+  arquivo_metadados
+)
+
+
+metadados <- as.data.frame(
+  metadados,
+  check.names = FALSE
+)
+
+
+names(metadados) <- trimws(
+  names(metadados)
+)
+
+
+# ============================================================
+# 8. CONFERIR COLUNAS NECESSÁRIAS NOS METADADOS
+# ============================================================
+
+colunas_metadados <- c(
+  "ponto",
+  "longitude",
+  "latitude"
+)
+
+
+faltando_metadados <- setdiff(
+  colunas_metadados,
+  names(metadados)
+)
+
+
+if (length(faltando_metadados) > 0) {
+  
+  stop(
+    paste0(
+      "Colunas ausentes na base de referências: ",
+      paste(
+        faltando_metadados,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ============================================================
+# 9. PADRONIZAR CÓDIGOS DOS INVENTÁRIOS
+# ============================================================
+
+metadados$ponto <- trimws(
+  as.character(
+    metadados$ponto
+  )
+)
+
+
+# ============================================================
+# 10. CONVERTER COORDENADAS PARA NÚMERO
+# ============================================================
+
+metadados$longitude <- suppressWarnings(
+  as.numeric(
+    gsub(
+      ",",
+      ".",
+      as.character(
+        metadados$longitude
+      ),
+      fixed = TRUE
+    )
+  )
+)
+
+
+metadados$latitude <- suppressWarnings(
+  as.numeric(
+    gsub(
+      ",",
+      ".",
+      as.character(
+        metadados$latitude
+      ),
+      fixed = TRUE
+    )
+  )
+)
+
+
+# ============================================================
+# 11. SELECIONAR NOS METADADOS SOMENTE INVENTÁRIOS
+#     PRESENTES NA MATRIZ
+# ============================================================
+
+pontos <- metadados[
+  metadados$ponto %in% inventarios_matriz,
   ,
-  colunas_inventarios_restantes,
   drop = FALSE
 ]
 
-# Converter os valores dos inventários para números
-matriz_ocorrencia_restante[] <- lapply(
-  matriz_ocorrencia_restante,
+
+# Evitar duplicação do mesmo inventário
+pontos <- pontos[
+  !duplicated(
+    pontos$ponto
+  ),
+  ,
+  drop = FALSE
+]
+
+
+cat(
+  "\nInventários encontrados nos metadados:",
+  nrow(pontos),
+  "\n"
+)
+
+
+# ============================================================
+# 12. IDENTIFICAR INVENTÁRIOS SEM REGISTRO NOS METADADOS
+# ============================================================
+
+inventarios_sem_metadados <- setdiff(
+  inventarios_matriz,
+  pontos$ponto
+)
+
+
+cat(
+  "Inventários sem correspondência nos metadados:",
+  length(inventarios_sem_metadados),
+  "\n"
+)
+
+
+if (length(inventarios_sem_metadados) > 0) {
+  
+  cat(
+    "\nInventários sem metadados:\n"
+  )
+  
+  print(
+    inventarios_sem_metadados
+  )
+}
+
+
+# ============================================================
+# 13. IDENTIFICAR INVENTÁRIOS SEM COORDENADAS
+# ============================================================
+
+sem_coordenadas <- pontos[
+  is.na(pontos$longitude) |
+    is.na(pontos$latitude),
+  "ponto"
+]
+
+
+cat(
+  "\nInventários sem coordenadas válidas:",
+  length(sem_coordenadas),
+  "\n"
+)
+
+
+if (length(sem_coordenadas) > 0) {
+  
+  print(
+    sem_coordenadas
+  )
+}
+
+
+# ============================================================
+# 14. MANTER SOMENTE PONTOS COM COORDENADAS
+# ============================================================
+
+pontos_validos <- pontos[
+  !is.na(pontos$longitude) &
+    !is.na(pontos$latitude),
+  ,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 15. VERIFICAR COORDENADAS IMPOSSÍVEIS
+#
+# Longitude:
+#   -180 a 180
+#
+# Latitude:
+#   -90 a 90
+# ============================================================
+
+coordenadas_invalidas <- pontos_validos[
+  pontos_validos$longitude < -180 |
+    pontos_validos$longitude > 180 |
+    pontos_validos$latitude < -90 |
+    pontos_validos$latitude > 90,
+  ,
+  drop = FALSE
+]
+
+
+if (nrow(coordenadas_invalidas) > 0) {
+  
+  cat(
+    "\nATENÇÃO: coordenadas impossíveis encontradas:\n"
+  )
+  
+  print(
+    coordenadas_invalidas[
+      ,
+      c(
+        "ponto",
+        "longitude",
+        "latitude"
+      )
+    ]
+  )
+  
+  stop(
+    "Existem coordenadas fora dos limites geográficos possíveis."
+  )
+}
+
+
+# ============================================================
+# 16. TRANSFORMAR INVENTÁRIOS EM OBJETO ESPACIAL
+#
+# Coordenadas geográficas:
+# WGS84 / EPSG:4326
+# ============================================================
+
+pontos_sf <- st_as_sf(
+  pontos_validos,
+  coords = c(
+    "longitude",
+    "latitude"
+  ),
+  crs = 4326,
+  remove = FALSE
+)
+
+
+# ============================================================
+# 17. LER SHAPEFILE DO BRASIL
+# ============================================================
+
+brasil <- st_read(
+  arquivo_brasil,
+  quiet = TRUE
+)
+
+
+cat(
+  "\nCRS original do shapefile do Brasil:\n"
+)
+
+print(
+  st_crs(brasil)
+)
+
+
+# ============================================================
+# 18. CORRIGIR GEOMETRIAS DO BRASIL
+# ============================================================
+
+brasil <- st_make_valid(
+  brasil
+)
+
+
+# ============================================================
+# 19. TRANSFORMAR O BRASIL PARA O MESMO CRS DOS PONTOS
+# ============================================================
+
+brasil <- st_transform(
+  brasil,
+  4326
+)
+
+
+# ============================================================
+# 20. UNIR GEOMETRIAS DO BRASIL
+#
+# Isso transforma eventuais múltiplos polígonos em
+# uma única geometria nacional.
+# ============================================================
+
+brasil_unido <- st_union(
+  st_geometry(
+    brasil
+  )
+)
+
+
+# ============================================================
+# 21. IDENTIFICAR INVENTÁRIOS DENTRO DO BRASIL
+#
+# st_intersects inclui também pontos localizados exatamente
+# sobre a fronteira.
+# ============================================================
+
+dentro_brasil <- lengths(
+  st_intersects(
+    pontos_sf,
+    brasil_unido
+  )
+) > 0
+
+
+pontos_sf$dentro_brasil <- dentro_brasil
+
+
+# ============================================================
+# 22. LISTA DE INVENTÁRIOS DENTRO E FORA DO BRASIL
+# ============================================================
+
+inventarios_brasil <- pontos_sf$ponto[
+  pontos_sf$dentro_brasil
+]
+
+
+inventarios_fora_brasil <- pontos_sf$ponto[
+  !pontos_sf$dentro_brasil
+]
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "RESULTADO DO FILTRO ESPACIAL\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Inventários com coordenadas válidas:",
+  nrow(pontos_sf),
+  "\n"
+)
+
+
+cat(
+  "Inventários dentro do Brasil:",
+  length(inventarios_brasil),
+  "\n"
+)
+
+
+cat(
+  "Inventários fora do Brasil:",
+  length(inventarios_fora_brasil),
+  "\n"
+)
+
+
+if (length(inventarios_fora_brasil) > 0) {
+  
+  cat(
+    "\nInventários identificados FORA do Brasil:\n"
+  )
+  
+  print(
+    inventarios_fora_brasil
+  )
+}
+
+
+# ============================================================
+# 23. DEFINIR INVENTÁRIOS QUE SERÃO MANTIDOS
+# ============================================================
+
+inventarios_manter <- intersect(
+  inventarios_matriz,
+  inventarios_brasil
+)
+
+
+cat(
+  "\nInventários que serão mantidos na matriz:",
+  length(inventarios_manter),
+  "\n"
+)
+
+
+if (length(inventarios_manter) == 0) {
+  
+  stop(
+    "Nenhum inventário foi identificado dentro do Brasil."
+  )
+}
+
+
+# ============================================================
+# 24. IDENTIFICAR TODOS OS INVENTÁRIOS REMOVIDOS
+#
+# Inclui:
+#   - fora do Brasil
+#   - sem coordenadas
+#   - sem correspondência nos metadados
+# ============================================================
+
+inventarios_removidos <- setdiff(
+  inventarios_matriz,
+  inventarios_manter
+)
+
+
+cat(
+  "Total de inventários removidos:",
+  length(inventarios_removidos),
+  "\n"
+)
+
+
+# ============================================================
+# 25. CRIAR MATRIZ COM:
+#
+# familia
+# genero
+# especie
+# identificacao
+# +
+# inventários dentro do Brasil
+# ============================================================
+
+dados_brasil <- dados[
+  ,
+  c(
+    "familia",
+    "genero",
+    "especie",
+    "identificacao",
+    inventarios_manter
+  ),
+  drop = FALSE
+]
+
+
+# ============================================================
+# 26. EXTRAIR SOMENTE A PARTE NUMÉRICA
+# ============================================================
+
+matriz_inventarios <- dados_brasil[
+  ,
+  inventarios_manter,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 27. CONVERTER VALORES PARA NÚMERO
+# ============================================================
+
+matriz_inventarios[] <- lapply(
+  matriz_inventarios,
   function(x) {
-    x <- gsub(",", ".", as.character(x), fixed = TRUE)
-    as.numeric(x)
+    
+    x <- gsub(
+      ",",
+      ".",
+      as.character(x),
+      fixed = TRUE
+    )
+    
+    suppressWarnings(
+      as.numeric(x)
+    )
   }
 )
 
-# Substituir valores vazios ou inválidos por zero
-matriz_ocorrencia_restante[is.na(matriz_ocorrencia_restante)] <- 0
 
-# Manter espécies presentes em pelo menos um inventário restante
-manter_especie <- rowSums(matriz_ocorrencia_restante > 0) > 0
+matriz_inventarios[
+  is.na(matriz_inventarios)
+] <- 0
 
-resultado <- dados_filtrados[
+
+# ============================================================
+# 28. REMOVER ESPÉCIES SEM OCORRÊNCIA APÓS O FILTRO
+# ============================================================
+
+manter_especie <- rowSums(
+  matriz_inventarios > 0,
+  na.rm = TRUE
+) > 0
+
+
+numero_especies_removidas <- sum(
+  !manter_especie
+)
+
+
+dados_brasil <- dados_brasil[
   manter_especie,
   ,
   drop = FALSE
 ]
 
-# Salvar a matriz de ocorrência filtrada
+
+cat(
+  "\nEspécies removidas por ficarem sem ocorrência:",
+  numero_especies_removidas,
+  "\n"
+)
+
+
+# ============================================================
+# 29. REMOVER TEMPORARIAMENTE:
+#
+# familia
+# genero
+# identificacao
+#
+# Manter:
+# especie + inventários
+# ============================================================
+
+colunas_remover <- c(
+  "familia",
+  "genero",
+  "identificacao"
+)
+
+
+dados_final <- dados_brasil[
+  ,
+  !names(dados_brasil) %in% colunas_remover,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 30. GARANTIR ESTRUTURA:
+#
+# especie | t1 | t2 | ...
+# ============================================================
+
+dados_final <- dados_final[
+  ,
+  c(
+    "especie",
+    inventarios_manter
+  ),
+  drop = FALSE
+]
+
+
+# ============================================================
+# 31. CONFERÊNCIA FINAL
+# ============================================================
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "ESTRUTURA DA MATRIZ FINAL\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Primeiras colunas:\n"
+)
+
+print(
+  names(dados_final)[
+    1:min(
+      10,
+      ncol(dados_final)
+    )
+  ]
+)
+
+
+cat(
+  "\nNúmero de espécies:",
+  nrow(dados_final),
+  "\n"
+)
+
+
+cat(
+  "Número de inventários:",
+  ncol(dados_final) - 1,
+  "\n"
+)
+
+
+# ============================================================
+# 32. CONFERIR NOMES DE ESPÉCIES REPETIDOS
+#
+# NÃO SOMAR NESTA ETAPA.
+# A união ocorrerá somente após a padronização taxonômica.
+# ============================================================
+
+numero_duplicadas <- sum(
+  duplicated(
+    dados_final$especie
+  )
+)
+
+
+cat(
+  "Linhas com nomes de espécies repetidos:",
+  numero_duplicadas,
+  "\n"
+)
+
+
+# ============================================================
+# 33. SALVAR MATRIZ FINAL
+# ============================================================
+
 write.csv2(
-  resultado,
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_ocorrência/Matriz_original_ocorrencia_brasil.csv",
+  dados_final,
+  arquivo_saida,
   row.names = FALSE,
   fileEncoding = "latin1"
 )
 
-# Resumo
-cat("Inventários antes da exclusão:", length(colunas_inventarios), "\n")
-cat("Inventários solicitados para exclusão:", length(inventarios_excluir), "\n")
-cat("Inventários encontrados e excluídos:", length(inventarios_encontrados), "\n")
-cat("Inventários não encontrados:", length(inventarios_nao_encontrados), "\n")
-cat("Inventários restantes:", length(colunas_inventarios_restantes), "\n\n")
 
-cat("Espécies antes da exclusão:", nrow(dados), "\n")
-cat("Espécies mantidas:", nrow(resultado), "\n")
-cat("Espécies eliminadas por ficarem sem ocorrência:",
-  nrow(dados) - nrow(resultado), "\n")
+# ============================================================
+# 34. SALVAR RELATÓRIO DOS INVENTÁRIOS REMOVIDOS
+# ============================================================
+
+relatorio_inventarios <- data.frame(
+  
+  inventario = inventarios_matriz,
+  
+  status = ifelse(
+    inventarios_matriz %in% inventarios_manter,
+    "mantido_brasil",
+    ifelse(
+      inventarios_matriz %in% inventarios_fora_brasil,
+      "fora_brasil",
+      ifelse(
+        inventarios_matriz %in% sem_coordenadas,
+        "sem_coordenadas",
+        ifelse(
+          inventarios_matriz %in% inventarios_sem_metadados,
+          "sem_metadados",
+          "removido_outro_motivo"
+        )
+      )
+    )
+  ),
+  
+  stringsAsFactors = FALSE
+)
+
+
+write.csv2(
+  relatorio_inventarios,
+  file.path(
+    pasta_caapora,
+    "Matrizes_ocorrência",
+    "relatorio_filtro_espacial_brasil_ocorrencia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 35. RESUMO FINAL
+# ============================================================
+
+cat(
+  "\n\n============================================\n"
+)
+
+cat(
+  "SCRIPT 01 CONCLUÍDO\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "\nINVENTÁRIOS\n"
+)
+
+
+cat(
+  "Inventários na matriz original:",
+  length(inventarios_matriz),
+  "\n"
+)
+
+
+cat(
+  "Inventários dentro do Brasil:",
+  length(inventarios_manter),
+  "\n"
+)
+
+
+cat(
+  "Inventários fora do Brasil:",
+  length(inventarios_fora_brasil),
+  "\n"
+)
+
+
+cat(
+  "Inventários sem coordenadas:",
+  length(sem_coordenadas),
+  "\n"
+)
+
+
+cat(
+  "Inventários sem metadados:",
+  length(inventarios_sem_metadados),
+  "\n"
+)
+
+
+cat(
+  "Total removido:",
+  length(inventarios_removidos),
+  "\n"
+)
+
+
+cat(
+  "\nESPÉCIES\n"
+)
+
+
+cat(
+  "Linhas na matriz original:",
+  nrow(dados),
+  "\n"
+)
+
+
+cat(
+  "Linhas removidas por ausência após o filtro:",
+  numero_especies_removidas,
+  "\n"
+)
+
+
+cat(
+  "Linhas restantes:",
+  nrow(dados_final),
+  "\n"
+)
+
+
+cat(
+  "\nESTRUTURA FINAL\n"
+)
+
+
+cat(
+  "Matriz final: especie + inventários\n"
+)
+
+
+cat(
+  "Colunas removidas temporariamente:",
+  paste(
+    colunas_remover,
+    collapse = ", "
+  ),
+  "\n"
+)
+
+
+cat(
+  "\nArquivo final:\n",
+  arquivo_saida,
+  "\n"
+)
+
+
+cat(
+  "\n============================================\n"
+)
