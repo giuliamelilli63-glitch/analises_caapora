@@ -1,0 +1,1364 @@
+# ============================================================
+# SCRIPT 02
+# FILTRO DE RIQUEZA + ÁREA
+# MATRIZ DE OCORRÊNCIA
+#
+# Entrada:
+#   Matriz_original_ocorrencia_brasil_identificacao.csv
+#
+# Estrutura:
+#   especie | identificacao | t1 | t2 | ...
+#
+# Critérios:
+#
+# 1. Selecionar inventários de exatamente 1 ha
+#
+# 2. Calcular a riqueza desses inventários usando somente
+#    identificações completas
+#
+# 3. Calcular:
+#       - média das 10 menores riquezas
+#       - média das 10 maiores riquezas
+#
+# 4. Usar essas médias como limites de riqueza
+#
+# 5. Calcular a riqueza de todos os inventários brasileiros
+#    usando o mesmo critério
+#
+# 6. Aplicar filtro de área:
+#       - manter 0.04 <= área <= 2 ha
+#       - manter também inventários sem informação de área
+#
+# 7. Remover espécies sem ocorrência após o filtro
+#
+# Saída:
+#   especie | identificacao | inventários selecionados
+# ============================================================
+
+
+# ============================================================
+# 0. PACOTES
+# ============================================================
+
+library(readxl)
+
+
+# ============================================================
+# 1. CAMINHOS
+# ============================================================
+
+pasta_caapora <- "C:/Users/giuli/OneDrive/Documentos/Caapora"
+
+
+arquivo_matriz <- file.path(
+  pasta_caapora,
+  "Matrizes_ocorrência",
+  "Matriz_original_ocorrencia_brasil_identificacao.csv"
+)
+
+
+arquivo_metadados <- file.path(
+  pasta_caapora,
+  "Matriz_refencia",
+  "caapora_base_referencias.xlsx"
+)
+
+
+arquivo_saida <- file.path(
+  pasta_caapora,
+  "Matrizes_ocorrência",
+  "Matriz_original_ocorrencia_brasil_filtro_riqueza_area.csv"
+)
+
+
+# ============================================================
+# 2. CONFERIR ARQUIVOS
+# ============================================================
+
+if (!file.exists(arquivo_matriz)) {
+  stop(
+    paste0(
+      "Matriz de ocorrência não encontrada:\n",
+      arquivo_matriz
+    )
+  )
+}
+
+
+if (!file.exists(arquivo_metadados)) {
+  stop(
+    paste0(
+      "Base de metadados não encontrada:\n",
+      arquivo_metadados
+    )
+  )
+}
+
+
+# ============================================================
+# 3. LER MATRIZ
+# ============================================================
+
+dados <- read.csv2(
+  arquivo_matriz,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+names(dados) <- trimws(
+  names(dados)
+)
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "MATRIZ DE ENTRADA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Número de linhas:",
+  nrow(dados),
+  "\n"
+)
+
+cat(
+  "Número de colunas:",
+  ncol(dados),
+  "\n"
+)
+
+
+# ============================================================
+# 4. CONFERIR COLUNAS
+# ============================================================
+
+colunas_necessarias <- c(
+  "especie",
+  "identificacao"
+)
+
+
+colunas_faltando <- setdiff(
+  colunas_necessarias,
+  names(dados)
+)
+
+
+if (length(colunas_faltando) > 0) {
+  stop(
+    paste0(
+      "Colunas não encontradas: ",
+      paste(
+        colunas_faltando,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ============================================================
+# 5. IDENTIFICAR INVENTÁRIOS
+# ============================================================
+
+inventarios <- grep(
+  "^t[0-9]+$",
+  names(dados),
+  value = TRUE
+)
+
+
+if (length(inventarios) == 0) {
+  stop(
+    "Nenhum inventário foi encontrado na matriz."
+  )
+}
+
+
+cat(
+  "\nInventários na matriz:",
+  length(inventarios),
+  "\n"
+)
+
+
+# ============================================================
+# 6. IDENTIFICAR REGISTROS COM IDENTIFICAÇÃO COMPLETA
+# ============================================================
+
+classificacao <- tolower(
+  trimws(
+    as.character(
+      dados$identificacao
+    )
+  )
+)
+
+
+identificacao_completa <- classificacao %in% c(
+  "completa",
+  "completo"
+)
+
+
+cat(
+  "Registros com identificação completa:",
+  sum(
+    identificacao_completa,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+
+cat(
+  "Registros com identificação incompleta:",
+  sum(
+    !identificacao_completa,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+
+# ============================================================
+# 7. CRIAR MATRIZ AUXILIAR PARA RIQUEZA
+#
+# Somente identificações completas
+# ============================================================
+
+matriz_riqueza <- dados[
+  identificacao_completa,
+  c(
+    "especie",
+    inventarios
+  ),
+  drop = FALSE
+]
+
+
+# ============================================================
+# 8. PADRONIZAR TEMPORARIAMENTE NOMES DE ESPÉCIE
+#
+# Apenas remover espaços extras
+# ============================================================
+
+matriz_riqueza$especie <- trimws(
+  as.character(
+    matriz_riqueza$especie
+  )
+)
+
+
+matriz_riqueza <- matriz_riqueza[
+  !is.na(
+    matriz_riqueza$especie
+  ) &
+    matriz_riqueza$especie != "",
+  ,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 9. CONVERTER INVENTÁRIOS PARA NÚMERO
+# ============================================================
+
+matriz_numerica <- matriz_riqueza[
+  ,
+  inventarios,
+  drop = FALSE
+]
+
+
+matriz_numerica[] <- lapply(
+  matriz_numerica,
+  function(x) {
+    
+    suppressWarnings(
+      as.numeric(
+        gsub(
+          ",",
+          ".",
+          as.character(x),
+          fixed = TRUE
+        )
+      )
+    )
+  }
+)
+
+
+matriz_numerica[
+  is.na(
+    matriz_numerica
+  )
+] <- 0
+
+
+# ============================================================
+# 10. TRANSFORMAR EM PRESENÇA/AUSÊNCIA
+# ============================================================
+
+matriz_numerica[] <- lapply(
+  matriz_numerica,
+  function(x) {
+    as.integer(
+      x > 0
+    )
+  }
+)
+
+
+# ============================================================
+# 11. RECOLOCAR COLUNA DE ESPÉCIE
+# ============================================================
+
+matriz_presenca <- data.frame(
+  especie = matriz_riqueza$especie,
+  matriz_numerica,
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+
+
+# ============================================================
+# 12. CONSOLIDAR NOMES EXATAMENTE REPETIDOS
+#
+# Para cálculo de riqueza apenas.
+# A matriz principal NÃO é alterada.
+# ============================================================
+
+numero_linhas_antes <- nrow(
+  matriz_presenca
+)
+
+
+matriz_presenca_unica <- aggregate(
+  matriz_presenca[
+    ,
+    inventarios,
+    drop = FALSE
+  ],
+  by = list(
+    especie = matriz_presenca$especie
+  ),
+  FUN = max
+)
+
+
+numero_especies_unicas <- nrow(
+  matriz_presenca_unica
+)
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "MATRIZ PARA CÁLCULO DE RIQUEZA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Linhas completas antes da consolidação:",
+  numero_linhas_antes,
+  "\n"
+)
+
+
+cat(
+  "Nomes únicos utilizados na riqueza:",
+  numero_especies_unicas,
+  "\n"
+)
+
+
+cat(
+  "Duplicatas exatas consolidadas:",
+  numero_linhas_antes - numero_especies_unicas,
+  "\n"
+)
+
+
+# ============================================================
+# 13. LER METADADOS
+# ============================================================
+
+metadados <- read_excel(
+  arquivo_metadados
+)
+
+
+metadados <- as.data.frame(
+  metadados,
+  check.names = FALSE
+)
+
+
+names(metadados) <- trimws(
+  names(metadados)
+)
+
+
+# ============================================================
+# 14. CONFERIR COLUNAS DOS METADADOS
+# ============================================================
+
+colunas_metadados <- c(
+  "ponto",
+  "area-amostrada-ha"
+)
+
+
+faltando_metadados <- setdiff(
+  colunas_metadados,
+  names(metadados)
+)
+
+
+if (length(faltando_metadados) > 0) {
+  stop(
+    paste0(
+      "Colunas não encontradas nos metadados: ",
+      paste(
+        faltando_metadados,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ============================================================
+# 15. PADRONIZAR INVENTÁRIOS
+# ============================================================
+
+metadados$ponto <- trimws(
+  as.character(
+    metadados$ponto
+  )
+)
+
+
+# ============================================================
+# 16. CONVERTER ÁREA PARA NÚMERO
+# ============================================================
+
+metadados$`area-amostrada-ha` <- suppressWarnings(
+  as.numeric(
+    gsub(
+      ",",
+      ".",
+      as.character(
+        metadados$`area-amostrada-ha`
+      ),
+      fixed = TRUE
+    )
+  )
+)
+
+
+# ============================================================
+# 17. MANTER APENAS INVENTÁRIOS DA MATRIZ
+# ============================================================
+
+metadados_matriz <- metadados[
+  metadados$ponto %in% inventarios,
+  ,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 18. VERIFICAR INVENTÁRIOS DUPLICADOS NOS METADADOS
+# ============================================================
+
+pontos_duplicados <- unique(
+  metadados_matriz$ponto[
+    duplicated(
+      metadados_matriz$ponto
+    )
+  ]
+)
+
+
+if (length(pontos_duplicados) > 0) {
+  
+  cat(
+    "\nATENÇÃO: inventários duplicados nos metadados:\n"
+  )
+  
+  print(
+    pontos_duplicados
+  )
+  
+  cat(
+    "\nSerá usada a primeira ocorrência de cada inventário.\n"
+  )
+}
+
+
+metadados_matriz <- metadados_matriz[
+  !duplicated(
+    metadados_matriz$ponto
+  ),
+  ,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 19. ASSOCIAR ÁREA A CADA INVENTÁRIO
+# ============================================================
+
+areas <- metadados_matriz$`area-amostrada-ha`[
+  match(
+    inventarios,
+    metadados_matriz$ponto
+  )
+]
+
+
+names(areas) <- inventarios
+
+
+# ============================================================
+# 20. IDENTIFICAR INVENTÁRIOS SEM ÁREA
+# ============================================================
+
+inventarios_sem_area <- names(
+  areas
+)[
+  is.na(
+    areas
+  )
+]
+
+
+cat(
+  "\nInventários sem informação de área:",
+  length(inventarios_sem_area),
+  "\n"
+)
+
+
+if (length(inventarios_sem_area) > 0) {
+  print(
+    inventarios_sem_area
+  )
+}
+
+
+# ============================================================
+# 21. IDENTIFICAR INVENTÁRIOS DE 1 HA
+# ============================================================
+
+inventarios_1ha <- names(
+  areas
+)[
+  !is.na(
+    areas
+  ) &
+    abs(
+      areas - 1
+    ) < 0.0001
+]
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "INVENTÁRIOS DE 1 HA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Número de inventários de 1 ha:",
+  length(inventarios_1ha),
+  "\n"
+)
+
+
+if (length(inventarios_1ha) < 10) {
+  stop(
+    paste0(
+      "Existem apenas ",
+      length(inventarios_1ha),
+      " inventários de 1 ha."
+    )
+  )
+}
+
+
+# ============================================================
+# 22. CALCULAR RIQUEZA DOS INVENTÁRIOS DE 1 HA
+# ============================================================
+
+riqueza_1ha <- colSums(
+  matriz_presenca_unica[
+    ,
+    inventarios_1ha,
+    drop = FALSE
+  ] > 0,
+  na.rm = TRUE
+)
+
+
+resultado_1ha <- data.frame(
+  
+  inventario = names(
+    riqueza_1ha
+  ),
+  
+  riqueza = as.numeric(
+    riqueza_1ha
+  ),
+  
+  area_ha = as.numeric(
+    areas[
+      names(
+        riqueza_1ha
+      )
+    ]
+  ),
+  
+  stringsAsFactors = FALSE
+)
+
+
+resultado_1ha <- resultado_1ha[
+  order(
+    resultado_1ha$riqueza
+  ),
+  ,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 23. SELECIONAR 10 MENORES E 10 MAIORES
+# ============================================================
+
+dez_menores <- head(
+  resultado_1ha,
+  10
+)
+
+
+dez_maiores <- tail(
+  resultado_1ha,
+  10
+)
+
+
+# ============================================================
+# 24. CALCULAR MÉDIAS
+# ============================================================
+
+media_10_menores <- mean(
+  dez_menores$riqueza,
+  na.rm = TRUE
+)
+
+
+media_10_maiores <- mean(
+  dez_maiores$riqueza,
+  na.rm = TRUE
+)
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "LIMITES DE RIQUEZA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Média das 10 menores riquezas:",
+  media_10_menores,
+  "\n"
+)
+
+
+cat(
+  "Média das 10 maiores riquezas:",
+  media_10_maiores,
+  "\n"
+)
+
+
+cat(
+  "\n10 menores riquezas:\n"
+)
+
+print(
+  dez_menores
+)
+
+
+cat(
+  "\n10 maiores riquezas:\n"
+)
+
+print(
+  dez_maiores
+)
+
+
+# ============================================================
+# 25. CALCULAR RIQUEZA DE TODOS OS INVENTÁRIOS
+# ============================================================
+
+riqueza_todos <- colSums(
+  matriz_presenca_unica[
+    ,
+    inventarios,
+    drop = FALSE
+  ] > 0,
+  na.rm = TRUE
+)
+
+
+# ============================================================
+# 26. CRIAR TABELA GERAL DOS INVENTÁRIOS
+# ============================================================
+
+resultado_todos <- data.frame(
+  
+  inventario = names(
+    riqueza_todos
+  ),
+  
+  riqueza = as.numeric(
+    riqueza_todos
+  ),
+  
+  area_ha = as.numeric(
+    areas[
+      names(
+        riqueza_todos
+      )
+    ]
+  ),
+  
+  stringsAsFactors = FALSE
+)
+
+
+# ============================================================
+# 27. FILTRO DE RIQUEZA
+# ============================================================
+
+resultado_todos$dentro_faixa_riqueza <-
+  
+  resultado_todos$riqueza >=
+  media_10_menores &
+  
+  resultado_todos$riqueza <=
+  media_10_maiores
+
+
+# ============================================================
+# 28. FILTRO DE ÁREA
+#
+# Manter:
+#
+#   0.04 <= área <= 2 ha
+#
+# OU
+#
+#   área ausente (NA)
+#
+# Excluir somente áreas conhecidas fora da faixa.
+# ============================================================
+
+resultado_todos$dentro_faixa_area <-
+  
+  is.na(
+    resultado_todos$area_ha
+  ) |
+  
+  (
+    resultado_todos$area_ha >= 0.04 &
+      resultado_todos$area_ha <= 2
+  )
+
+
+# ============================================================
+# 29. FILTRO FINAL
+#
+# Precisa passar no filtro de riqueza
+# e no critério de área.
+#
+# Inventários sem área podem ser mantidos,
+# desde que passem no filtro de riqueza.
+# ============================================================
+
+resultado_todos$selecionado <-
+  
+  resultado_todos$dentro_faixa_riqueza &
+  
+  resultado_todos$dentro_faixa_area
+
+
+# ============================================================
+# 30. CLASSIFICAR STATUS / MOTIVO
+# ============================================================
+
+resultado_todos$motivo <- ifelse(
+  
+  resultado_todos$selecionado &
+    is.na(
+      resultado_todos$area_ha
+    ),
+  
+  "mantido_sem_area",
+  
+  ifelse(
+    
+    resultado_todos$selecionado,
+    
+    "mantido",
+    
+    ifelse(
+      
+      !resultado_todos$dentro_faixa_riqueza &
+        !resultado_todos$dentro_faixa_area,
+      
+      "fora_riqueza_e_area",
+      
+      ifelse(
+        
+        !resultado_todos$dentro_faixa_riqueza,
+        
+        "fora_riqueza",
+        
+        "fora_area"
+      )
+    )
+  )
+)
+
+
+# ============================================================
+# 31. INVENTÁRIOS SELECIONADOS E EXCLUÍDOS
+# ============================================================
+
+inventarios_selecionados <- resultado_todos$inventario[
+  resultado_todos$selecionado
+]
+
+
+inventarios_excluidos <- resultado_todos$inventario[
+  !resultado_todos$selecionado
+]
+
+
+# ============================================================
+# 32. RESUMO DOS FILTROS
+# ============================================================
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "RESULTADO DOS FILTROS\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Inventários antes:",
+  nrow(resultado_todos),
+  "\n"
+)
+
+
+cat(
+  "Dentro da faixa de riqueza:",
+  sum(
+    resultado_todos$dentro_faixa_riqueza,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+
+cat(
+  "Com área entre 0.04 e 2 ha OU sem área:",
+  sum(
+    resultado_todos$dentro_faixa_area,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+
+cat(
+  "Inventários sem área:",
+  sum(
+    is.na(
+      resultado_todos$area_ha
+    )
+  ),
+  "\n"
+)
+
+
+cat(
+  "Inventários selecionados:",
+  length(inventarios_selecionados),
+  "\n"
+)
+
+
+cat(
+  "Inventários excluídos:",
+  length(inventarios_excluidos),
+  "\n"
+)
+
+
+cat(
+  "\nStatus dos inventários:\n"
+)
+
+
+print(
+  table(
+    resultado_todos$motivo,
+    useNA = "ifany"
+  )
+)
+
+
+if (length(inventarios_selecionados) == 0) {
+  stop(
+    "Nenhum inventário permaneceu após os filtros."
+  )
+}
+
+
+# ============================================================
+# 33. CRIAR MATRIZ FINAL
+#
+# Manter todas as linhas:
+# completas + incompletas
+#
+# O filtro por identificação completa foi usado
+# apenas para calcular a riqueza.
+# ============================================================
+
+matriz_final <- dados[
+  ,
+  c(
+    "especie",
+    "identificacao",
+    inventarios_selecionados
+  ),
+  drop = FALSE
+]
+
+
+# ============================================================
+# 34. CRIAR MATRIZ AUXILIAR DOS INVENTÁRIOS SELECIONADOS
+# ============================================================
+
+matriz_auxiliar <- matriz_final[
+  ,
+  inventarios_selecionados,
+  drop = FALSE
+]
+
+
+matriz_auxiliar[] <- lapply(
+  matriz_auxiliar,
+  function(x) {
+    
+    suppressWarnings(
+      as.numeric(
+        gsub(
+          ",",
+          ".",
+          as.character(x),
+          fixed = TRUE
+        )
+      )
+    )
+  }
+)
+
+
+matriz_auxiliar[
+  is.na(
+    matriz_auxiliar
+  )
+] <- 0
+
+
+# ============================================================
+# 35. REMOVER ESPÉCIES SEM OCORRÊNCIA
+# ============================================================
+
+manter_especie <- rowSums(
+  matriz_auxiliar > 0,
+  na.rm = TRUE
+) > 0
+
+
+numero_especies_removidas <- sum(
+  !manter_especie
+)
+
+
+matriz_final <- matriz_final[
+  manter_especie,
+  ,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 36. CONFERIR MATRIZ FINAL
+# ============================================================
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "MATRIZ FINAL\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Linhas antes:",
+  nrow(dados),
+  "\n"
+)
+
+
+cat(
+  "Linhas removidas por ausência:",
+  numero_especies_removidas,
+  "\n"
+)
+
+
+cat(
+  "Linhas restantes:",
+  nrow(matriz_final),
+  "\n"
+)
+
+
+cat(
+  "Inventários restantes:",
+  length(inventarios_selecionados),
+  "\n"
+)
+
+
+cat(
+  "\nIdentificações na matriz final:\n"
+)
+
+
+print(
+  table(
+    matriz_final$identificacao,
+    useNA = "ifany"
+  )
+)
+
+
+# ============================================================
+# 37. SALVAR MATRIZ FINAL
+# ============================================================
+
+write.csv2(
+  matriz_final,
+  arquivo_saida,
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 38. SALVAR RIQUEZA DAS PARCELAS DE 1 HA
+# ============================================================
+
+write.csv2(
+  resultado_1ha,
+  file.path(
+    pasta_caapora,
+    "Matrizes_ocorrência",
+    "riqueza_parcelas_1ha_ocorrencia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+
+# ============================================================
+# 39. SALVAR 10 MENORES RIQUEZAS
+# ============================================================
+
+write.csv2(
+  dez_menores,
+  file.path(
+    pasta_caapora,
+    "Matrizes_ocorrência",
+    "10_menores_riquezas_1ha_ocorrencia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+
+# ============================================================
+# 40. SALVAR 10 MAIORES RIQUEZAS
+# ============================================================
+
+write.csv2(
+  dez_maiores,
+  file.path(
+    pasta_caapora,
+    "Matrizes_ocorrência",
+    "10_maiores_riquezas_1ha_ocorrencia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+
+# ============================================================
+# 41. SALVAR RELATÓRIO COMPLETO
+# ============================================================
+
+write.csv2(
+  resultado_todos,
+  file.path(
+    pasta_caapora,
+    "Matrizes_ocorrência",
+    "relatorio_filtro_riqueza_area_ocorrencia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 42. SALVAR INVENTÁRIOS SEM ÁREA
+#
+# Útil para conferência posterior.
+# ============================================================
+
+tabela_sem_area <- resultado_todos[
+  is.na(
+    resultado_todos$area_ha
+  ),
+  ,
+  drop = FALSE
+]
+
+
+write.csv2(
+  tabela_sem_area,
+  file.path(
+    pasta_caapora,
+    "Matrizes_ocorrência",
+    "inventarios_sem_area_ocorrencia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+
+# ============================================================
+# 43. RESUMO FINAL
+# ============================================================
+
+cat(
+  "\n\n============================================\n"
+)
+
+cat(
+  "SCRIPT 02 CONCLUÍDO\n"
+)
+
+cat(
+  "FILTRO DE RIQUEZA + ÁREA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "\nREFERÊNCIA DE 1 HA\n"
+)
+
+
+cat(
+  "Número de inventários de 1 ha:",
+  length(inventarios_1ha),
+  "\n"
+)
+
+
+cat(
+  "Média das 10 menores riquezas:",
+  media_10_menores,
+  "\n"
+)
+
+
+cat(
+  "Média das 10 maiores riquezas:",
+  media_10_maiores,
+  "\n"
+)
+
+
+cat(
+  "\nCRITÉRIOS\n"
+)
+
+
+cat(
+  "Faixa de riqueza:",
+  media_10_menores,
+  "a",
+  media_10_maiores,
+  "\n"
+)
+
+
+cat(
+  "Área conhecida: 0.04 a 2 ha\n"
+)
+
+
+cat(
+  "Inventários sem área: mantidos se passarem no filtro de riqueza\n"
+)
+
+
+cat(
+  "\nINVENTÁRIOS\n"
+)
+
+
+cat(
+  "Antes:",
+  length(inventarios),
+  "\n"
+)
+
+
+cat(
+  "Sem informação de área:",
+  length(inventarios_sem_area),
+  "\n"
+)
+
+
+cat(
+  "Depois:",
+  length(inventarios_selecionados),
+  "\n"
+)
+
+
+cat(
+  "Removidos:",
+  length(inventarios_excluidos),
+  "\n"
+)
+
+
+cat(
+  "\nESPÉCIES / LINHAS\n"
+)
+
+
+cat(
+  "Antes:",
+  nrow(dados),
+  "\n"
+)
+
+
+cat(
+  "Removidas por ausência:",
+  numero_especies_removidas,
+  "\n"
+)
+
+
+cat(
+  "Depois:",
+  nrow(matriz_final),
+  "\n"
+)
+
+
+cat(
+  "\nESTRUTURA FINAL\n"
+)
+
+
+cat(
+  "especie | identificacao | inventários\n"
+)
+
+
+cat(
+  "\nArquivo salvo em:\n",
+  arquivo_saida,
+  "\n"
+)
+
+
+cat(
+  "\n============================================\n"
+)
