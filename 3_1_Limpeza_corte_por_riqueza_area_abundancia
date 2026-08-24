@@ -1,0 +1,710 @@
+# ============================================================
+# SCRIPT A1
+# FILTRAR MATRIZ DE ABUNDÂNCIA
+# COM BASE NOS INVENTÁRIOS MANTIDOS NA OCORRÊNCIA
+#
+# Entrada abundância:
+#   Matriz_original_abundancia.csv
+#
+# Entrada ocorrência:
+#   Matriz_original_ocorrencia_brasil_filtro_riqueza_area.csv
+#
+# Critério:
+#   manter na abundância apenas os inventários que também
+#   permaneceram na matriz final de ocorrência
+#
+# Após o filtro:
+#   - remover linhas sem abundância
+#   - remover temporariamente:
+#       familia
+#       genero
+#       identificacao
+#
+# Saída:
+#   especie | inventários
+# ============================================================
+
+
+# ============================================================
+# 1. CAMINHOS
+# ============================================================
+
+pasta_caapora <- "C:/Users/giuli/OneDrive/Documentos/Caapora"
+
+
+arquivo_abundancia <- file.path(
+  pasta_caapora,
+  "Matrizes_abundancia",
+  "Matriz_original_abundancia.csv"
+)
+
+
+arquivo_ocorrencia <- file.path(
+  pasta_caapora,
+  "Matrizes_ocorrência",
+  "Matriz_original_ocorrencia_brasil_filtro_riqueza_area.csv"
+)
+
+
+arquivo_saida <- file.path(
+  pasta_caapora,
+  "Matrizes_abundancia",
+  "Matriz_original_abundancia_brasil_filtro_riqueza_area.csv"
+)
+
+
+# ============================================================
+# 2. CONFERIR ARQUIVOS
+# ============================================================
+
+if (!file.exists(arquivo_abundancia)) {
+  
+  stop(
+    paste0(
+      "Matriz de abundância não encontrada:\n",
+      arquivo_abundancia
+    )
+  )
+}
+
+
+if (!file.exists(arquivo_ocorrencia)) {
+  
+  stop(
+    paste0(
+      "Matriz de ocorrência filtrada não encontrada:\n",
+      arquivo_ocorrencia
+    )
+  )
+}
+
+
+# ============================================================
+# 3. LER MATRIZ DE ABUNDÂNCIA
+# ============================================================
+
+abundancia <- read.csv2(
+  arquivo_abundancia,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+names(abundancia) <- trimws(
+  names(abundancia)
+)
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "MATRIZ ORIGINAL DE ABUNDÂNCIA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Número de linhas:",
+  nrow(abundancia),
+  "\n"
+)
+
+
+cat(
+  "Número de colunas:",
+  ncol(abundancia),
+  "\n"
+)
+
+
+# ============================================================
+# 4. CONFERIR COLUNA especie
+# ============================================================
+
+if (!"especie" %in% names(abundancia)) {
+  
+  stop(
+    "A coluna 'especie' não foi encontrada na matriz de abundância."
+  )
+}
+
+
+# ============================================================
+# 5. LER MATRIZ DE OCORRÊNCIA FILTRADA
+# ============================================================
+
+ocorrencia <- read.csv2(
+  arquivo_ocorrencia,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+names(ocorrencia) <- trimws(
+  names(ocorrencia)
+)
+
+
+# ============================================================
+# 6. IDENTIFICAR INVENTÁRIOS NA OCORRÊNCIA
+#
+# Estes são os inventários de referência.
+# ============================================================
+
+inventarios_ocorrencia <- grep(
+  "^t[0-9]+$",
+  names(ocorrencia),
+  value = TRUE
+)
+
+
+if (length(inventarios_ocorrencia) == 0) {
+  
+  stop(
+    "Nenhum inventário foi encontrado na matriz de ocorrência."
+  )
+}
+
+
+cat(
+  "\nInventários mantidos na ocorrência:",
+  length(inventarios_ocorrencia),
+  "\n"
+)
+
+
+# ============================================================
+# 7. IDENTIFICAR INVENTÁRIOS NA ABUNDÂNCIA
+# ============================================================
+
+inventarios_abundancia <- grep(
+  "^t[0-9]+$",
+  names(abundancia),
+  value = TRUE
+)
+
+
+if (length(inventarios_abundancia) == 0) {
+  
+  stop(
+    "Nenhum inventário foi encontrado na matriz de abundância."
+  )
+}
+
+
+cat(
+  "Inventários existentes na abundância:",
+  length(inventarios_abundancia),
+  "\n"
+)
+
+
+# ============================================================
+# 8. IDENTIFICAR INVENTÁRIOS COMUNS
+#
+# Manter somente os inventários que:
+#
+# - estão na ocorrência final
+# E
+# - existem na abundância
+# ============================================================
+
+inventarios_manter <- intersect(
+  inventarios_ocorrencia,
+  inventarios_abundancia
+)
+
+
+if (length(inventarios_manter) == 0) {
+  
+  stop(
+    paste0(
+      "Nenhum inventário da abundância corresponde ",
+      "aos inventários mantidos na ocorrência."
+    )
+  )
+}
+
+
+# ============================================================
+# 9. INVENTÁRIOS DA OCORRÊNCIA AUSENTES NA ABUNDÂNCIA
+# ============================================================
+
+ocorrencia_sem_abundancia <- setdiff(
+  inventarios_ocorrencia,
+  inventarios_abundancia
+)
+
+
+# ============================================================
+# 10. INVENTÁRIOS DA ABUNDÂNCIA QUE SERÃO EXCLUÍDOS
+# ============================================================
+
+inventarios_excluidos <- setdiff(
+  inventarios_abundancia,
+  inventarios_manter
+)
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "COMPARAÇÃO DOS INVENTÁRIOS\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Inventários finais da ocorrência:",
+  length(inventarios_ocorrencia),
+  "\n"
+)
+
+
+cat(
+  "Inventários existentes na abundância:",
+  length(inventarios_abundancia),
+  "\n"
+)
+
+
+cat(
+  "Inventários comuns:",
+  length(inventarios_manter),
+  "\n"
+)
+
+
+cat(
+  "Inventários da ocorrência ausentes na abundância:",
+  length(ocorrencia_sem_abundancia),
+  "\n"
+)
+
+
+cat(
+  "Inventários da abundância excluídos:",
+  length(inventarios_excluidos),
+  "\n"
+)
+
+
+# ============================================================
+# 11. IDENTIFICAR COLUNAS TAXONÔMICAS EXISTENTES
+# ============================================================
+
+colunas_taxonomicas <- intersect(
+  c(
+    "familia",
+    "genero",
+    "especie",
+    "identificacao"
+  ),
+  names(abundancia)
+)
+
+
+# ============================================================
+# 12. CRIAR MATRIZ DE ABUNDÂNCIA FILTRADA
+#
+# Ainda mantemos temporariamente as colunas taxonômicas
+# existentes para depois remover familia/genero/identificacao.
+# ============================================================
+
+abundancia_filtrada <- abundancia[
+  ,
+  c(
+    colunas_taxonomicas,
+    inventarios_manter
+  ),
+  drop = FALSE
+]
+
+
+# ============================================================
+# 13. EXTRAIR SOMENTE A PARTE NUMÉRICA
+# ============================================================
+
+matriz_numerica <- abundancia_filtrada[
+  ,
+  inventarios_manter,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 14. CONVERTER VALORES PARA NÚMERO
+# ============================================================
+
+matriz_numerica[] <- lapply(
+  matriz_numerica,
+  function(x) {
+    
+    suppressWarnings(
+      as.numeric(
+        gsub(
+          ",",
+          ".",
+          as.character(x),
+          fixed = TRUE
+        )
+      )
+    )
+  }
+)
+
+
+matriz_numerica[
+  is.na(
+    matriz_numerica
+  )
+] <- 0
+
+
+# ============================================================
+# 15. REMOVER LINHAS SEM ABUNDÂNCIA
+#
+# Uma linha será mantida quando tiver pelo menos
+# um indivíduo em pelo menos um inventário selecionado.
+# ============================================================
+
+manter_especie <- rowSums(
+  matriz_numerica > 0,
+  na.rm = TRUE
+) > 0
+
+
+numero_linhas_removidas <- sum(
+  !manter_especie
+)
+
+
+abundancia_filtrada <- abundancia_filtrada[
+  manter_especie,
+  ,
+  drop = FALSE
+]
+
+
+cat(
+  "\nLinhas removidas por ausência após o filtro:",
+  numero_linhas_removidas,
+  "\n"
+)
+
+
+# ============================================================
+# 16. REMOVER TEMPORARIAMENTE:
+#
+# familia
+# genero
+# identificacao
+#
+# Manter:
+# especie + inventários
+# ============================================================
+
+colunas_remover <- c(
+  "familia",
+  "genero",
+  "identificacao"
+)
+
+
+abundancia_final <- abundancia_filtrada[
+  ,
+  !names(abundancia_filtrada) %in% colunas_remover,
+  drop = FALSE
+]
+
+
+# ============================================================
+# 17. GARANTIR ESTRUTURA FINAL
+#
+# especie | t... | t... | ...
+# ============================================================
+
+abundancia_final <- abundancia_final[
+  ,
+  c(
+    "especie",
+    inventarios_manter
+  ),
+  drop = FALSE
+]
+
+
+# ============================================================
+# 18. CONFERIR NOMES REPETIDOS
+#
+# NÃO unir nem somar ainda.
+#
+# Isso será feito depois da conferência taxonômica.
+# ============================================================
+
+numero_duplicadas <- sum(
+  duplicated(
+    abundancia_final$especie
+  )
+)
+
+
+cat(
+  "\nLinhas com nomes de espécie repetidos:",
+  numero_duplicadas,
+  "\n"
+)
+
+
+# ============================================================
+# 19. CONFERIR ESTRUTURA FINAL
+# ============================================================
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "ESTRUTURA FINAL\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Número de linhas:",
+  nrow(abundancia_final),
+  "\n"
+)
+
+
+cat(
+  "Número de inventários:",
+  length(inventarios_manter),
+  "\n"
+)
+
+
+cat(
+  "\nPrimeiras colunas:\n"
+)
+
+
+print(
+  names(abundancia_final)[
+    1:min(
+      10,
+      ncol(abundancia_final)
+    )
+  ]
+)
+
+
+# ============================================================
+# 20. SALVAR MATRIZ FILTRADA
+# ============================================================
+
+write.csv2(
+  abundancia_final,
+  arquivo_saida,
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 21. SALVAR INVENTÁRIOS MANTIDOS
+# ============================================================
+
+write.csv2(
+  data.frame(
+    inventario = inventarios_manter,
+    stringsAsFactors = FALSE
+  ),
+  file.path(
+    pasta_caapora,
+    "Matrizes_abundancia",
+    "inventarios_mantidos_abundancia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 22. SALVAR INVENTÁRIOS DA OCORRÊNCIA
+#     AUSENTES NA ABUNDÂNCIA
+# ============================================================
+
+write.csv2(
+  data.frame(
+    inventario = ocorrencia_sem_abundancia,
+    stringsAsFactors = FALSE
+  ),
+  file.path(
+    pasta_caapora,
+    "Matrizes_abundancia",
+    "inventarios_ocorrencia_ausentes_abundancia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+
+# ============================================================
+# 23. SALVAR INVENTÁRIOS EXCLUÍDOS DA ABUNDÂNCIA
+# ============================================================
+
+write.csv2(
+  data.frame(
+    inventario = inventarios_excluidos,
+    stringsAsFactors = FALSE
+  ),
+  file.path(
+    pasta_caapora,
+    "Matrizes_abundancia",
+    "inventarios_excluidos_abundancia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 24. RESUMO FINAL
+# ============================================================
+
+cat(
+  "\n\n============================================\n"
+)
+
+cat(
+  "SCRIPT A1 CONCLUÍDO\n"
+)
+
+cat(
+  "FILTRO DA ABUNDÂNCIA PELA OCORRÊNCIA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "\nINVENTÁRIOS\n"
+)
+
+
+cat(
+  "Na ocorrência final:",
+  length(inventarios_ocorrencia),
+  "\n"
+)
+
+
+cat(
+  "Na abundância original:",
+  length(inventarios_abundancia),
+  "\n"
+)
+
+
+cat(
+  "Mantidos na abundância:",
+  length(inventarios_manter),
+  "\n"
+)
+
+
+cat(
+  "Ocorrência sem correspondente na abundância:",
+  length(ocorrencia_sem_abundancia),
+  "\n"
+)
+
+
+cat(
+  "Excluídos da abundância:",
+  length(inventarios_excluidos),
+  "\n"
+)
+
+
+cat(
+  "\nESPÉCIES / LINHAS\n"
+)
+
+
+cat(
+  "Antes:",
+  nrow(abundancia),
+  "\n"
+)
+
+
+cat(
+  "Removidas por ausência:",
+  numero_linhas_removidas,
+  "\n"
+)
+
+
+cat(
+  "Depois:",
+  nrow(abundancia_final),
+  "\n"
+)
+
+
+cat(
+  "\nESTRUTURA FINAL\n"
+)
+
+
+cat(
+  "especie | inventários\n"
+)
+
+
+cat(
+  "familia: removida temporariamente\n"
+)
+
+
+cat(
+  "genero: removido temporariamente\n"
+)
+
+
+cat(
+  "identificacao: removida temporariamente\n"
+)
+
+
+cat(
+  "\nArquivo salvo em:\n",
+  arquivo_saida,
+  "\n"
+)
+
+
+cat(
+  "\n============================================\n"
+)
