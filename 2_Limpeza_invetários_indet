@@ -1,19 +1,63 @@
 # ============================================================
+# SCRIPT 01B
 # CLASSIFICAR IDENTIFICAÇÕES COMPLETAS E INCOMPLETAS
-# MATRIZ DE ABUNDÂNCIA
+# MATRIZ DE OCORRÊNCIA
+#
+# Entrada:
+#   Matriz_original_ocorrencia_brasil.csv
+#
+# Estrutura esperada:
+#   especie | t1 | t2 | t3 | ...
+#
+# Saída:
+#   especie | identificacao | t1 | t2 | t3 | ...
+#
+# familia e genero permanecem fora nesta etapa
 # ============================================================
 
 
 # ============================================================
-# 1. LER A MATRIZ
+# 1. CAMINHOS
+# ============================================================
+
+pasta_caapora <- "C:/Users/giuli/OneDrive/Documentos/Caapora"
+
+
+arquivo_entrada <- file.path(
+  pasta_caapora,
+  "Matrizes_ocorrência",
+  "Matriz_original_ocorrencia_brasil.csv"
+)
+
+
+arquivo_saida <- file.path(
+  pasta_caapora,
+  "Matrizes_ocorrência",
+  "Matriz_original_ocorrencia_brasil_identificacao.csv"
+)
+
+
+# ============================================================
+# 2. CONFERIR SE O ARQUIVO EXISTE
+# ============================================================
+
+if (!file.exists(arquivo_entrada)) {
+  
+  stop(
+    paste0(
+      "Arquivo de entrada não encontrado:\n",
+      arquivo_entrada
+    )
+  )
+}
+
+
+# ============================================================
+# 3. LER A MATRIZ
 # ============================================================
 
 dados <- read.csv2(
-  paste0(
-    "C:/Users/giuli/OneDrive/Documentos/Caapora/",
-    "Matrizes_abundancia/",
-    "Matriz_original_abundancia_brasil.csv"
-  ),
+  arquivo_entrada,
   header = TRUE,
   stringsAsFactors = FALSE,
   check.names = FALSE,
@@ -21,14 +65,61 @@ dados <- read.csv2(
 )
 
 
+names(dados) <- trimws(
+  names(dados)
+)
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "MATRIZ DE ENTRADA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Número de linhas:",
+  nrow(dados),
+  "\n"
+)
+
+
+cat(
+  "Número de colunas:",
+  ncol(dados),
+  "\n"
+)
+
+
+cat(
+  "\nPrimeiras colunas:\n"
+)
+
+
+print(
+  names(dados)[
+    1:min(
+      10,
+      ncol(dados)
+    )
+  ]
+)
+
+
 # ============================================================
-# 2. PADRONIZAR TEMPORARIAMENTE OS NOMES DAS COLUNAS
+# 4. PADRONIZAR TEMPORARIAMENTE OS NOMES DAS COLUNAS
 # ============================================================
 
 nomes_colunas <- tolower(
   trimws(
     iconv(
-      colnames(dados),
+      names(dados),
       from = "",
       to = "ASCII//TRANSLIT",
       sub = ""
@@ -38,38 +129,120 @@ nomes_colunas <- tolower(
 
 
 # ============================================================
-# 3. LOCALIZAR AS COLUNAS
+# 5. LOCALIZAR A COLUNA especie
 # ============================================================
 
 col_especie <- which(
   nomes_colunas == "especie"
 )
 
-col_identificacao <- which(
-  nomes_colunas == "identificacao"
-)
 
 if (length(col_especie) != 1) {
+  
   stop(
     "A coluna 'especie' não foi encontrada ou está duplicada."
   )
 }
 
-if (length(col_identificacao) != 1) {
-  stop(
-    paste0(
-      "A coluna 'identificacao' não foi encontrada ",
-      "ou está duplicada."
+
+# ============================================================
+# 6. CONFERIR SE familia E genero ESTÃO FORA
+# ============================================================
+
+colunas_indesejadas <- nomes_colunas %in% c(
+  "familia",
+  "genero"
+)
+
+
+if (any(colunas_indesejadas)) {
+  
+  cat(
+    "\nATENÇÃO: foram encontradas as colunas familia/genero.\n"
+  )
+  
+  cat(
+    "Elas serão removidas nesta etapa.\n"
+  )
+  
+  dados <- dados[
+    ,
+    !colunas_indesejadas,
+    drop = FALSE
+  ]
+  
+  
+  nomes_colunas <- tolower(
+    trimws(
+      iconv(
+        names(dados),
+        from = "",
+        to = "ASCII//TRANSLIT",
+        sub = ""
+      )
     )
+  )
+  
+  
+  col_especie <- which(
+    nomes_colunas == "especie"
   )
 }
 
 
 # ============================================================
-# 4. PADRONIZAR TEMPORARIAMENTE OS NOMES DAS ESPÉCIES
+# 7. REMOVER identificacao ANTIGA, SE EXISTIR
+#
+# A classificação será refeita do zero.
 # ============================================================
 
-# A coluna original não será alterada.
+col_identificacao_antiga <- which(
+  nomes_colunas == "identificacao"
+)
+
+
+if (length(col_identificacao_antiga) > 0) {
+  
+  cat(
+    "\nColuna 'identificacao' antiga encontrada.\n"
+  )
+  
+  cat(
+    "Ela será removida e reconstruída.\n"
+  )
+  
+  
+  dados <- dados[
+    ,
+    -col_identificacao_antiga,
+    drop = FALSE
+  ]
+  
+  
+  nomes_colunas <- tolower(
+    trimws(
+      iconv(
+        names(dados),
+        from = "",
+        to = "ASCII//TRANSLIT",
+        sub = ""
+      )
+    )
+  )
+  
+  
+  col_especie <- which(
+    nomes_colunas == "especie"
+  )
+}
+
+
+# ============================================================
+# 8. PADRONIZAR TEMPORARIAMENTE OS NOMES DAS ESPÉCIES
+#
+# IMPORTANTE:
+# a coluna especie original NÃO será alterada.
+# ============================================================
 
 especie_padronizada <- tolower(
   trimws(
@@ -84,10 +257,13 @@ especie_padronizada <- tolower(
   )
 )
 
-# Padronizar espaços para underline apenas para a classificação.
-# Exemplos:
-# "hippocratea sp"   -> "hippocratea_sp"
-# "schizolobium_ sp" -> "schizolobium_sp"
+
+# ------------------------------------------------------------
+# Transformar espaços em underline
+#
+# Exemplo:
+# "inga sp" -> "inga_sp"
+# ------------------------------------------------------------
 
 especie_padronizada <- gsub(
   "[[:space:]]+",
@@ -95,7 +271,10 @@ especie_padronizada <- gsub(
   especie_padronizada
 )
 
-# Remover underlines repetidos.
+
+# ------------------------------------------------------------
+# Remover underlines repetidos
+# ------------------------------------------------------------
 
 especie_padronizada <- gsub(
   "_+",
@@ -103,7 +282,10 @@ especie_padronizada <- gsub(
   especie_padronizada
 )
 
-# Remover underline no início ou no final.
+
+# ------------------------------------------------------------
+# Remover underline do início/final
+# ------------------------------------------------------------
 
 especie_padronizada <- gsub(
   "^_|_$",
@@ -113,13 +295,14 @@ especie_padronizada <- gsub(
 
 
 # ============================================================
-# 5. LISTA MANUAL DE IDENTIFICAÇÕES INCOMPLETAS
+# 9. LISTA MANUAL DE IDENTIFICAÇÕES INCOMPLETAS
+#
+# Estes nomes foram previamente conferidos como incompletos.
+# Esta lista complementa as regras automáticas.
 # ============================================================
 
-# Estes nomes foram conferidos manualmente como incompletos.
-# A lista é complementar às regras automáticas.
-
 nomes_incompletos_manuais <- c(
+  
   "aspidosperma_pir",
   "blanchetiana",
   "chamaecrista",
@@ -141,7 +324,9 @@ nomes_incompletos_manuais <- c(
   "lonchocarpus",
   "outras",
   "strine"
+  
 )
+
 
 nomes_incompletos_manuais <- unique(
   nomes_incompletos_manuais
@@ -149,52 +334,58 @@ nomes_incompletos_manuais <- unique(
 
 
 # ============================================================
-# 6. IDENTIFICAR REGISTROS INCOMPLETOS
-# ============================================================
-
-# Regra automática:
+# 10. REGRA AUTOMÁTICA PARA IDENTIFICAÇÕES INCOMPLETAS
+#
+# Exemplos:
 #
 # inga_indet
 # inga_sp
 # inga_ssp
-# inga_sp_
 # indet
 # indet_indet
 # indet_sp
 # indet_t
 # indet_tt
+# ============================================================
 
 incompleta_regra_automatica <-
+  
   grepl(
     "_(indet|sp|ssp)$",
     especie_padronizada
   ) |
+  
   grepl(
     "^indet($|_)",
     especie_padronizada
   )
 
-# Regra manual:
-# nomes especificamente conferidos como incompletos.
+
+# ============================================================
+# 11. REGRA DA LISTA MANUAL
+# ============================================================
 
 incompleta_lista_manual <-
   especie_padronizada %in%
   nomes_incompletos_manuais
 
-# Classificação final:
-# será incompleta se atender à regra automática
-# ou estiver na lista manual.
+
+# ============================================================
+# 12. CLASSIFICAÇÃO FINAL
+#
+# Incompleta se:
+#
+#   - atender à regra automática
+# OU
+#   - estiver na lista manual
+# ============================================================
 
 identificacao_incompleta <-
   incompleta_regra_automatica |
   incompleta_lista_manual
 
 
-# ============================================================
-# 7. PREENCHER A COLUNA IDENTIFICAÇÃO
-# ============================================================
-
-dados[[col_identificacao]] <- ifelse(
+identificacao_nova <- ifelse(
   identificacao_incompleta,
   "incompleta",
   "completa"
@@ -202,7 +393,79 @@ dados[[col_identificacao]] <- ifelse(
 
 
 # ============================================================
-# 8. CRIAR TABELAS DE CONFERÊNCIA
+# 13. INSERIR COLUNA identificacao
+# ============================================================
+
+dados$identificacao <- identificacao_nova
+
+
+# ============================================================
+# 14. REORDENAR AS COLUNAS
+#
+# Resultado:
+#
+# especie | identificacao | inventários
+# ============================================================
+
+inventarios <- grep(
+  "^t[0-9]+$",
+  names(dados),
+  value = TRUE
+)
+
+
+if (length(inventarios) == 0) {
+  
+  stop(
+    "Nenhuma coluna de inventário foi encontrada."
+  )
+}
+
+
+dados <- dados[
+  ,
+  c(
+    "especie",
+    "identificacao",
+    inventarios
+  ),
+  drop = FALSE
+]
+
+
+# ============================================================
+# 15. CONFERIR SE EXISTEM COLUNAS INESPERADAS
+# ============================================================
+
+colunas_esperadas <- c(
+  "especie",
+  "identificacao",
+  inventarios
+)
+
+
+colunas_extras <- setdiff(
+  names(dados),
+  colunas_esperadas
+)
+
+
+if (length(colunas_extras) > 0) {
+  
+  warning(
+    paste0(
+      "Existem colunas adicionais na matriz: ",
+      paste(
+        colunas_extras,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ============================================================
+# 16. CRIAR TABELAS PARA CONFERÊNCIA
 # ============================================================
 
 registros_incompletos <- dados[
@@ -211,17 +474,20 @@ registros_incompletos <- dados[
   drop = FALSE
 ]
 
+
 registros_completos <- dados[
   !identificacao_incompleta,
   ,
   drop = FALSE
 ]
 
+
 registros_incompletos_regra_automatica <- dados[
   incompleta_regra_automatica,
   ,
   drop = FALSE
 ]
+
 
 registros_incompletos_lista_manual <- dados[
   incompleta_lista_manual,
@@ -231,37 +497,65 @@ registros_incompletos_lista_manual <- dados[
 
 
 # ============================================================
-# 9. CONFERIR NOMES MANUAIS NÃO ENCONTRADOS
+# 17. CONFERIR NOMES DA LISTA MANUAL
 # ============================================================
 
 nomes_manuais_encontrados <- intersect(
   nomes_incompletos_manuais,
-  unique(especie_padronizada)
+  unique(
+    especie_padronizada
+  )
 )
+
 
 nomes_manuais_nao_encontrados <- setdiff(
   nomes_incompletos_manuais,
-  unique(especie_padronizada)
+  unique(
+    especie_padronizada
+  )
+)
+
+
+cat(
+  "\n============================================\n"
 )
 
 cat(
-  "\nNomes da lista manual encontrados na matriz:",
+  "CONFERÊNCIA DA LISTA MANUAL\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+
+cat(
+  "Nomes da lista manual:",
+  length(nomes_incompletos_manuais),
+  "\n"
+)
+
+
+cat(
+  "Nomes encontrados:",
   length(nomes_manuais_encontrados),
   "\n"
 )
 
+
 cat(
-  "Nomes da lista manual não encontrados na matriz:",
+  "Nomes não encontrados:",
   length(nomes_manuais_nao_encontrados),
   "\n"
 )
 
-if (length(nomes_manuais_nao_encontrados) > 0) {
 
+if (length(nomes_manuais_nao_encontrados) > 0) {
+  
   cat(
     "\nNomes manuais não encontrados:\n"
   )
-
+  
   print(
     nomes_manuais_nao_encontrados
   )
@@ -269,14 +563,31 @@ if (length(nomes_manuais_nao_encontrados) > 0) {
 
 
 # ============================================================
-# 10. SALVAR A MATRIZ COMPLETA
+# 18. CONFERIR CASOS CLASSIFICADOS PELAS DUAS REGRAS
+#
+# Isso evita interpretar a soma das categorias como
+# número total de identificações incompletas.
 # ============================================================
 
-arquivo_saida <- paste0(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
-  "Matrizes_abundancia/",
-  "Matriz_original_abundancia_brasil_identificacao.csv"
+incompleta_ambas_regras <-
+  incompleta_regra_automatica &
+  incompleta_lista_manual
+
+
+cat(
+  "\nRegistros reconhecidos simultaneamente ",
+  "pela regra automática e pela lista manual:",
+  sum(
+    incompleta_ambas_regras,
+    na.rm = TRUE
+  ),
+  "\n"
 )
+
+
+# ============================================================
+# 19. SALVAR MATRIZ COM identificacao
+# ============================================================
 
 write.csv2(
   dados,
@@ -287,26 +598,58 @@ write.csv2(
 
 
 # ============================================================
-# 11. SALVAR OS REGISTROS INCOMPLETOS PARA CONFERÊNCIA
+# 20. SALVAR LISTA DE IDENTIFICAÇÕES INCOMPLETAS
+#
+# Aqui vamos salvar somente:
+# especie + identificacao
+#
+# Não há necessidade de repetir milhares de colunas de
+# inventários apenas para conferir os nomes.
 # ============================================================
 
+tabela_incompletos <- registros_incompletos[
+  ,
+  c(
+    "especie",
+    "identificacao"
+  ),
+  drop = FALSE
+]
+
+
 write.csv2(
-  registros_incompletos,
-  paste0(
-    "C:/Users/giuli/OneDrive/Documentos/Caapora/",
-    "Matrizes_abundancia/",
-    "registros_identificacao_incompleta.csv"
+  tabela_incompletos,
+  file.path(
+    pasta_caapora,
+    "Matrizes_ocorrência",
+    "registros_identificacao_incompleta_ocorrencia.csv"
   ),
   row.names = FALSE,
   fileEncoding = "latin1"
 )
 
+
+# ============================================================
+# 21. SALVAR LISTA DOS CASOS DA REGRA AUTOMÁTICA
+# ============================================================
+
+tabela_regra_automatica <-
+  registros_incompletos_regra_automatica[
+    ,
+    c(
+      "especie",
+      "identificacao"
+    ),
+    drop = FALSE
+  ]
+
+
 write.csv2(
-  registros_incompletos_lista_manual,
-  paste0(
-    "C:/Users/giuli/OneDrive/Documentos/Caapora/",
-    "Matrizes_abundancia/",
-    "registros_incompletos_lista_manual.csv"
+  tabela_regra_automatica,
+  file.path(
+    pasta_caapora,
+    "Matrizes_ocorrência",
+    "registros_incompletos_regra_automatica_ocorrencia.csv"
   ),
   row.names = FALSE,
   fileEncoding = "latin1"
@@ -314,29 +657,79 @@ write.csv2(
 
 
 # ============================================================
-# 12. MOSTRAR RESUMO
+# 22. SALVAR LISTA DOS CASOS MANUAIS
+# ============================================================
+
+tabela_lista_manual <-
+  registros_incompletos_lista_manual[
+    ,
+    c(
+      "especie",
+      "identificacao"
+    ),
+    drop = FALSE
+  ]
+
+
+write.csv2(
+  tabela_lista_manual,
+  file.path(
+    pasta_caapora,
+    "Matrizes_ocorrência",
+    "registros_incompletos_lista_manual_ocorrencia.csv"
+  ),
+  row.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 23. RESUMO FINAL
 # ============================================================
 
 cat(
-  "\n==========================================\n"
+  "\n\n============================================\n"
 )
 
 cat(
-  "RESUMO DA CLASSIFICAÇÃO TAXONÔMICA\n"
+  "SCRIPT 01B CONCLUÍDO\n"
 )
 
 cat(
-  "==========================================\n"
+  "CLASSIFICAÇÃO DAS IDENTIFICAÇÕES\n"
 )
 
 cat(
-  "Total de registros na matriz:",
+  "============================================\n"
+)
+
+
+cat(
+  "\nMATRIZ\n"
+)
+
+
+cat(
+  "Total de registros:",
   nrow(dados),
   "\n"
 )
 
+
 cat(
-  "Identificações completas:",
+  "Número de inventários:",
+  length(inventarios),
+  "\n"
+)
+
+
+cat(
+  "\nIDENTIFICAÇÃO\n"
+)
+
+
+cat(
+  "Completas:",
   sum(
     !identificacao_incompleta,
     na.rm = TRUE
@@ -344,8 +737,9 @@ cat(
   "\n"
 )
 
+
 cat(
-  "Identificações incompletas:",
+  "Incompletas:",
   sum(
     identificacao_incompleta,
     na.rm = TRUE
@@ -353,8 +747,9 @@ cat(
   "\n"
 )
 
+
 cat(
-  "Incompletas reconhecidas pela regra automática:",
+  "Reconhecidas pela regra automática:",
   sum(
     incompleta_regra_automatica,
     na.rm = TRUE
@@ -362,8 +757,9 @@ cat(
   "\n"
 )
 
+
 cat(
-  "Incompletas presentes na lista manual:",
+  "Presentes na lista manual:",
   sum(
     incompleta_lista_manual,
     na.rm = TRUE
@@ -371,25 +767,72 @@ cat(
   "\n"
 )
 
+
 cat(
-  "Nenhuma linha foi excluída.\n"
+  "Presentes nas duas regras:",
+  sum(
+    incompleta_ambas_regras,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+
+cat(
+  "\nESTRUTURA FINAL\n"
+)
+
+
+cat(
+  "especie | identificacao | inventários\n"
+)
+
+
+cat(
+  "familia: fora da matriz\n"
 )
 
 cat(
-  "Arquivo salvo em:\n",
+  "genero: fora da matriz\n"
+)
+
+
+cat(
+  "\nPrimeiras colunas:\n"
+)
+
+
+print(
+  names(dados)[
+    1:min(
+      10,
+      ncol(dados)
+    )
+  ]
+)
+
+
+cat(
+  "\nNenhuma linha foi excluída nesta etapa.\n"
+)
+
+
+cat(
+  "\nArquivo principal salvo em:\n",
   arquivo_saida,
   "\n"
 )
 
+
 cat(
-  "==========================================\n"
+  "\n============================================\n"
 )
 
 
 # ============================================================
-# 13. VISUALIZAR OS REGISTROS INCOMPLETOS
+# 24. VISUALIZAR IDENTIFICAÇÕES INCOMPLETAS
 # ============================================================
 
 View(
-  registros_incompletos
+  tabela_incompletos
 )
