@@ -1,0 +1,1793 @@
+# ============================================================
+# MATRIZ DE ABUNDÂNCIA
+# SCRIPT A4
+# CONSTRUÇÃO DAS MATRIZES ANALÍTICAS FINAIS
+#
+# OBJETIVOS:
+#
+# 1. Manter somente:
+#    status_harmonizacao == "completa_com_correspondencia"
+#
+# 2. Excluir:
+#    - identificações incompletas
+#    - completas sem correspondência botânica
+#
+# 3. NÃO recalcular a abundância relativa
+#
+#    A abundância relativa calculada no A3 deve continuar
+#    usando como denominador TODOS os indivíduos originais,
+#    inclusive incompletas e sem correspondência.
+#
+# 4. Adicionar:
+#    - familia
+#    - genero
+#    - LifeForm
+#
+# 5. Cruzar os nomes utilizando:
+#
+#    1. Nome_aceito_REFLORA
+#    2. Nome_aceito_POWO
+#    3. Nome_POWO
+#
+# 6. Gerar:
+#
+#    - matriz final de abundância RELATIVA
+#    - matriz final de abundância ABSOLUTA
+#
+# 7. Manter especie_original para rastreabilidade.
+#
+# ============================================================
+
+
+# ============================================================
+# 0. PACOTES
+# ============================================================
+
+pacotes <- c(
+  "dplyr",
+  "readxl",
+  "stringr",
+  "openxlsx"
+)
+
+pacotes_faltantes <- pacotes[
+  !pacotes %in% rownames(installed.packages())
+]
+
+if (length(pacotes_faltantes) > 0) {
+  install.packages(pacotes_faltantes)
+}
+
+library(dplyr)
+library(readxl)
+library(stringr)
+library(openxlsx)
+
+
+# ============================================================
+# 1. CAMINHOS
+# ============================================================
+
+pasta_caapora <-
+  "C:/Users/giuli/OneDrive/Documentos/Caapora"
+
+
+pasta_harmonizacao <- file.path(
+  pasta_caapora,
+  "Matrizes_abundancia",
+  "harmonizacao_botanica"
+)
+
+
+# ------------------------------------------------------------
+# MATRIZ RELATIVA PRODUZIDA NO A3
+# ------------------------------------------------------------
+
+arquivo_relativa <- file.path(
+  pasta_harmonizacao,
+  "Matriz_abundancia_relativa_completa.csv"
+)
+
+
+# ------------------------------------------------------------
+# MATRIZ ABSOLUTA PRODUZIDA NO A2
+# ------------------------------------------------------------
+
+arquivo_absoluta <- file.path(
+  pasta_harmonizacao,
+  "Matriz_abundancia_harmonizada_consolidada.csv"
+)
+
+
+# ------------------------------------------------------------
+# TABELA TAXONÔMICA + LIFEFORM
+# ------------------------------------------------------------
+
+arquivo_taxonomia <- file.path(
+  pasta_caapora,
+  "nomes_botanicos",
+  "Conferencia_REFLORA_LifeForm_complementada_POWO.xlsx"
+)
+
+
+# ------------------------------------------------------------
+# SAÍDAS
+# ------------------------------------------------------------
+
+arquivo_saida_relativa_csv <- file.path(
+  pasta_harmonizacao,
+  "Matriz_abundancia_relativa_final_taxonomia_lifeform.csv"
+)
+
+arquivo_saida_relativa_xlsx <- file.path(
+  pasta_harmonizacao,
+  "Matriz_abundancia_relativa_final_taxonomia_lifeform.xlsx"
+)
+
+
+arquivo_saida_absoluta_csv <- file.path(
+  pasta_harmonizacao,
+  "Matriz_abundancia_absoluta_final_taxonomia_lifeform.csv"
+)
+
+arquivo_saida_absoluta_xlsx <- file.path(
+  pasta_harmonizacao,
+  "Matriz_abundancia_absoluta_final_taxonomia_lifeform.xlsx"
+)
+
+
+arquivo_relatorio <- file.path(
+  pasta_harmonizacao,
+  "relatorio_A4_matrizes_finais_abundancia.xlsx"
+)
+
+
+# ============================================================
+# 2. CONFERIR ARQUIVOS
+# ============================================================
+
+arquivos_necessarios <- c(
+  arquivo_relativa,
+  arquivo_absoluta,
+  arquivo_taxonomia
+)
+
+
+arquivos_ausentes <- arquivos_necessarios[
+  !file.exists(
+    arquivos_necessarios
+  )
+]
+
+
+if (length(arquivos_ausentes) > 0) {
+  
+  stop(
+    paste0(
+      "Arquivos não encontrados:\n",
+      paste(
+        arquivos_ausentes,
+        collapse = "\n"
+      )
+    )
+  )
+}
+
+
+# ============================================================
+# 3. FUNÇÃO PARA NORMALIZAR NOMES
+#
+# Usada SOMENTE para cruzamento.
+# ============================================================
+
+normalizar_nome <- function(x) {
+  
+  x <- as.character(x)
+  
+  x <- iconv(
+    x,
+    from = "",
+    to = "ASCII//TRANSLIT",
+    sub = ""
+  )
+  
+  x <- tolower(x)
+  
+  x <- gsub(
+    "_",
+    " ",
+    x,
+    fixed = TRUE
+  )
+  
+  x <- gsub(
+    "\u00A0",
+    " ",
+    x,
+    fixed = TRUE
+  )
+  
+  x <- gsub(
+    "×",
+    "x",
+    x,
+    fixed = TRUE
+  )
+  
+  x <- gsub(
+    "[[:space:]]+",
+    " ",
+    x
+  )
+  
+  x <- trimws(x)
+  
+  x[x == ""] <- NA_character_
+  
+  x
+}
+
+
+# ============================================================
+# 4. LER MATRIZ RELATIVA
+# ============================================================
+
+matriz_relativa <- read.csv2(
+  arquivo_relativa,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+# ============================================================
+# 5. LER MATRIZ ABSOLUTA
+# ============================================================
+
+matriz_absoluta <- read.csv2(
+  arquivo_absoluta,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "A4 - MATRIZES DE ENTRADA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Linhas - relativa:",
+  nrow(matriz_relativa),
+  "\n"
+)
+
+cat(
+  "Linhas - absoluta:",
+  nrow(matriz_absoluta),
+  "\n"
+)
+
+
+# ============================================================
+# 6. CONFERIR COLUNAS OBRIGATÓRIAS
+# ============================================================
+
+colunas_obrigatorias <- c(
+  "especie_original",
+  "especie",
+  "identificacao",
+  "status_harmonizacao"
+)
+
+
+faltando_relativa <- setdiff(
+  colunas_obrigatorias,
+  names(matriz_relativa)
+)
+
+
+faltando_absoluta <- setdiff(
+  colunas_obrigatorias,
+  names(matriz_absoluta)
+)
+
+
+if (length(faltando_relativa) > 0) {
+  
+  stop(
+    paste0(
+      "Colunas ausentes na matriz relativa:\n",
+      paste(
+        faltando_relativa,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+if (length(faltando_absoluta) > 0) {
+  
+  stop(
+    paste0(
+      "Colunas ausentes na matriz absoluta:\n",
+      paste(
+        faltando_absoluta,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ============================================================
+# 7. IDENTIFICAR INVENTÁRIOS
+# ============================================================
+
+inventarios_relativa <- grep(
+  "^t[0-9]+$",
+  names(matriz_relativa),
+  value = TRUE
+)
+
+
+inventarios_absoluta <- grep(
+  "^t[0-9]+$",
+  names(matriz_absoluta),
+  value = TRUE
+)
+
+
+# ------------------------------------------------------------
+# t897 foi removido no A3.
+#
+# Portanto também precisa sair da matriz absoluta.
+# ------------------------------------------------------------
+
+inventarios_finais <- intersect(
+  inventarios_relativa,
+  inventarios_absoluta
+)
+
+
+cat(
+  "\nInventários na matriz relativa:",
+  length(inventarios_relativa),
+  "\n"
+)
+
+cat(
+  "Inventários na matriz absoluta:",
+  length(inventarios_absoluta),
+  "\n"
+)
+
+cat(
+  "Inventários finais comuns:",
+  length(inventarios_finais),
+  "\n"
+)
+
+
+# Esperado:
+# 1561
+
+
+# ============================================================
+# 8. FILTRAR MATRIZ RELATIVA
+#
+# Manter apenas espécies completas com correspondência.
+# ============================================================
+
+relativa_excluidas <- matriz_relativa %>%
+  
+  filter(
+    status_harmonizacao !=
+      "completa_com_correspondencia"
+  )
+
+
+matriz_relativa_filtrada <- matriz_relativa %>%
+  
+  filter(
+    status_harmonizacao ==
+      "completa_com_correspondencia"
+  )
+
+
+# ============================================================
+# 9. FILTRAR MATRIZ ABSOLUTA
+# ============================================================
+
+absoluta_excluidas <- matriz_absoluta %>%
+  
+  filter(
+    status_harmonizacao !=
+      "completa_com_correspondencia"
+  )
+
+
+matriz_absoluta_filtrada <- matriz_absoluta %>%
+  
+  filter(
+    status_harmonizacao ==
+      "completa_com_correspondencia"
+  )
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "FILTRO TAXONÔMICO\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Espécies completas com correspondência:",
+  nrow(matriz_relativa_filtrada),
+  "\n"
+)
+
+cat(
+  "Linhas excluídas:",
+  nrow(relativa_excluidas),
+  "\n"
+)
+
+
+# Esperado:
+# 4655 espécies finais
+
+
+# ============================================================
+# 10. GARANTIR MESMAS ESPÉCIES NAS DUAS MATRIZES
+# ============================================================
+
+especies_relativa <- sort(
+  unique(
+    matriz_relativa_filtrada$especie
+  )
+)
+
+
+especies_absoluta <- sort(
+  unique(
+    matriz_absoluta_filtrada$especie
+  )
+)
+
+
+apenas_relativa <- setdiff(
+  especies_relativa,
+  especies_absoluta
+)
+
+
+apenas_absoluta <- setdiff(
+  especies_absoluta,
+  especies_relativa
+)
+
+
+if (
+  length(apenas_relativa) > 0 |
+    length(apenas_absoluta) > 0
+) {
+  
+  stop(
+    paste0(
+      "As matrizes absoluta e relativa não possuem ",
+      "exatamente o mesmo conjunto de espécies."
+    )
+  )
+}
+
+
+# ============================================================
+# 11. CRIAR CHAVES TAXONÔMICAS
+# ============================================================
+
+matriz_relativa_filtrada <- matriz_relativa_filtrada %>%
+  
+  mutate(
+    
+    chave_taxonomica =
+      normalizar_nome(
+        especie
+      )
+    
+  )
+
+
+matriz_absoluta_filtrada <- matriz_absoluta_filtrada %>%
+  
+  mutate(
+    
+    chave_taxonomica =
+      normalizar_nome(
+        especie
+      )
+    
+  )
+
+
+# ============================================================
+# 12. LER TABELA TAXONÔMICA
+# ============================================================
+
+taxonomia <- read_excel(
+  arquivo_taxonomia,
+  sheet = 1,
+  .name_repair = "unique"
+)
+
+
+taxonomia <- as.data.frame(
+  taxonomia,
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+
+cat(
+  "\nColunas da tabela taxonômica:\n"
+)
+
+print(
+  names(taxonomia)
+)
+
+
+# ============================================================
+# 13. CONFERIR COLUNAS NECESSÁRIAS
+# ============================================================
+
+colunas_taxonomia <- c(
+  "Nome_aceito_REFLORA",
+  "Familia_REFLORA",
+  "Genero_REFLORA",
+  "LifeForm_FINAL",
+  "Nome_aceito_POWO",
+  "Nome_POWO"
+)
+
+
+faltando_taxonomia <- setdiff(
+  colunas_taxonomia,
+  names(taxonomia)
+)
+
+
+if (length(faltando_taxonomia) > 0) {
+  
+  stop(
+    paste0(
+      "Colunas ausentes na tabela taxonômica:\n",
+      paste(
+        faltando_taxonomia,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ============================================================
+# 14. LOOKUP REFLORA
+# ============================================================
+
+lookup_reflora <- taxonomia %>%
+  
+  filter(
+    
+    !is.na(
+      Nome_aceito_REFLORA
+    ),
+    
+    trimws(
+      as.character(
+        Nome_aceito_REFLORA
+      )
+    ) != ""
+    
+  ) %>%
+  
+  transmute(
+    
+    chave_taxonomica =
+      normalizar_nome(
+        Nome_aceito_REFLORA
+      ),
+    
+    familia =
+      as.character(
+        Familia_REFLORA
+      ),
+    
+    genero =
+      as.character(
+        Genero_REFLORA
+      ),
+    
+    LifeForm =
+      as.character(
+        LifeForm_FINAL
+      ),
+    
+    fonte_cruzamento =
+      "REFLORA"
+    
+  )
+
+
+# ============================================================
+# 15. LOOKUP POWO - NOME ACEITO
+# ============================================================
+
+lookup_powo_aceito <- taxonomia %>%
+  
+  filter(
+    
+    !is.na(
+      Nome_aceito_POWO
+    ),
+    
+    trimws(
+      as.character(
+        Nome_aceito_POWO
+      )
+    ) != ""
+    
+  ) %>%
+  
+  transmute(
+    
+    chave_taxonomica =
+      normalizar_nome(
+        Nome_aceito_POWO
+      ),
+    
+    familia =
+      as.character(
+        Familia_REFLORA
+      ),
+    
+    genero =
+      case_when(
+        
+        !is.na(
+          Genero_REFLORA
+        ) &
+          trimws(
+            as.character(
+              Genero_REFLORA
+            )
+          ) != "" ~
+          
+          as.character(
+            Genero_REFLORA
+          ),
+        
+        TRUE ~
+          
+          word(
+            as.character(
+              Nome_aceito_POWO
+            ),
+            1
+          )
+        
+      ),
+    
+    LifeForm =
+      as.character(
+        LifeForm_FINAL
+      ),
+    
+    fonte_cruzamento =
+      "POWO_nome_aceito"
+    
+  )
+
+
+# ============================================================
+# 16. LOOKUP POWO - NOME ENCONTRADO
+# ============================================================
+
+lookup_powo_nome <- taxonomia %>%
+  
+  filter(
+    
+    !is.na(
+      Nome_POWO
+    ),
+    
+    trimws(
+      as.character(
+        Nome_POWO
+      )
+    ) != ""
+    
+  ) %>%
+  
+  transmute(
+    
+    chave_taxonomica =
+      normalizar_nome(
+        Nome_POWO
+      ),
+    
+    familia =
+      as.character(
+        Familia_REFLORA
+      ),
+    
+    genero =
+      case_when(
+        
+        !is.na(
+          Genero_REFLORA
+        ) &
+          trimws(
+            as.character(
+              Genero_REFLORA
+            )
+          ) != "" ~
+          
+          as.character(
+            Genero_REFLORA
+          ),
+        
+        TRUE ~
+          
+          word(
+            as.character(
+              Nome_POWO
+            ),
+            1
+          )
+        
+      ),
+    
+    LifeForm =
+      as.character(
+        LifeForm_FINAL
+      ),
+    
+    fonte_cruzamento =
+      "POWO_nome_encontrado"
+    
+  )
+
+
+# ============================================================
+# 17. UNIR LOOKUPS
+# ============================================================
+
+lookup_taxonomia <- bind_rows(
+  
+  lookup_reflora,
+  
+  lookup_powo_aceito,
+  
+  lookup_powo_nome
+  
+) %>%
+  
+  filter(
+    
+    !is.na(
+      chave_taxonomica
+    ),
+    
+    chave_taxonomica != ""
+    
+  ) %>%
+  
+  mutate(
+    
+    familia =
+      na_if(
+        str_squish(
+          familia
+        ),
+        ""
+      ),
+    
+    genero =
+      na_if(
+        str_squish(
+          genero
+        ),
+        ""
+      ),
+    
+    LifeForm =
+      na_if(
+        str_squish(
+          LifeForm
+        ),
+        ""
+      )
+    
+  )
+
+
+# ============================================================
+# 18. DEFINIR PRIORIDADE
+#
+# Priorizar registros mais completos.
+#
+# Depois:
+# REFLORA
+# POWO nome aceito
+# POWO nome encontrado
+# ============================================================
+
+lookup_taxonomia <- lookup_taxonomia %>%
+  
+  mutate(
+    
+    completude =
+      
+      as.integer(
+        !is.na(
+          familia
+        )
+      ) +
+      
+      as.integer(
+        !is.na(
+          genero
+        )
+      ) +
+      
+      as.integer(
+        !is.na(
+          LifeForm
+        )
+      ),
+    
+    prioridade_fonte =
+      case_when(
+        
+        fonte_cruzamento ==
+          "REFLORA" ~
+          
+          1L,
+        
+        fonte_cruzamento ==
+          "POWO_nome_aceito" ~
+          
+          2L,
+        
+        fonte_cruzamento ==
+          "POWO_nome_encontrado" ~
+          
+          3L,
+        
+        TRUE ~
+          
+          4L
+        
+      )
+    
+  )
+
+
+# ============================================================
+# 19. IDENTIFICAR CONFLITOS
+# ============================================================
+
+conflitos <- lookup_taxonomia %>%
+  
+  group_by(
+    chave_taxonomica
+  ) %>%
+  
+  summarise(
+    
+    numero_familias =
+      n_distinct(
+        familia,
+        na.rm = TRUE
+      ),
+    
+    familias =
+      paste(
+        sort(
+          unique(
+            na.omit(
+              familia
+            )
+          )
+        ),
+        collapse = " | "
+      ),
+    
+    numero_generos =
+      n_distinct(
+        genero,
+        na.rm = TRUE
+      ),
+    
+    generos =
+      paste(
+        sort(
+          unique(
+            na.omit(
+              genero
+            )
+          )
+        ),
+        collapse = " | "
+      ),
+    
+    numero_lifeforms =
+      n_distinct(
+        LifeForm,
+        na.rm = TRUE
+      ),
+    
+    lifeforms =
+      paste(
+        sort(
+          unique(
+            na.omit(
+              LifeForm
+            )
+          )
+        ),
+        collapse = " | "
+      ),
+    
+    fontes =
+      paste(
+        sort(
+          unique(
+            fonte_cruzamento
+          )
+        ),
+        collapse = " | "
+      ),
+    
+    .groups =
+      "drop"
+    
+  ) %>%
+  
+  filter(
+    
+    numero_familias > 1 |
+      
+      numero_generos > 1 |
+      
+      numero_lifeforms > 1
+    
+  )
+
+
+# ============================================================
+# 20. DEIXAR UMA LINHA POR CHAVE
+# ============================================================
+
+lookup_final <- lookup_taxonomia %>%
+  
+  arrange(
+    
+    chave_taxonomica,
+    
+    desc(
+      completude
+    ),
+    
+    prioridade_fonte
+    
+  ) %>%
+  
+  distinct(
+    
+    chave_taxonomica,
+    
+    .keep_all = TRUE
+    
+  ) %>%
+  
+  select(
+    
+    chave_taxonomica,
+    
+    familia,
+    
+    genero,
+    
+    LifeForm,
+    
+    fonte_cruzamento
+    
+  )
+
+
+# ============================================================
+# 21. CRUZAR MATRIZ RELATIVA
+# ============================================================
+
+relativa_cruzada <- matriz_relativa_filtrada %>%
+  
+  left_join(
+    
+    lookup_final,
+    
+    by =
+      "chave_taxonomica"
+    
+  )
+
+
+# ============================================================
+# 22. CRUZAR MATRIZ ABSOLUTA
+# ============================================================
+
+absoluta_cruzada <- matriz_absoluta_filtrada %>%
+  
+  left_join(
+    
+    lookup_final,
+    
+    by =
+      "chave_taxonomica"
+    
+  )
+
+
+# ============================================================
+# 23. CONFERIR CRUZAMENTO
+# ============================================================
+
+relativa_cruzada <- relativa_cruzada %>%
+  
+  mutate(
+    
+    encontrou_taxonomia =
+      
+      !is.na(
+        familia
+      ) |
+      
+      !is.na(
+        genero
+      ) |
+      
+      !is.na(
+        LifeForm
+      ),
+    
+    encontrou_familia =
+      !is.na(
+        familia
+      ),
+    
+    encontrou_genero =
+      !is.na(
+        genero
+      ),
+    
+    encontrou_lifeform =
+      !is.na(
+        LifeForm
+      )
+    
+  )
+
+
+# ============================================================
+# 24. CASOS SEM CRUZAMENTO
+# ============================================================
+
+nao_cruzaram <- relativa_cruzada %>%
+  
+  filter(
+    !encontrou_taxonomia
+  ) %>%
+  
+  select(
+    
+    especie_original,
+    
+    especie,
+    
+    chave_taxonomica
+    
+  ) %>%
+  
+  arrange(
+    especie
+  )
+
+
+# ============================================================
+# 25. CASOS SEM FAMÍLIA
+# ============================================================
+
+sem_familia <- relativa_cruzada %>%
+  
+  filter(
+    !encontrou_familia
+  ) %>%
+  
+  select(
+    
+    especie_original,
+    
+    especie,
+    
+    genero,
+    
+    LifeForm,
+    
+    fonte_cruzamento
+    
+  ) %>%
+  
+  arrange(
+    especie
+  )
+
+
+# ============================================================
+# 26. CASOS SEM GÊNERO
+# ============================================================
+
+sem_genero <- relativa_cruzada %>%
+  
+  filter(
+    !encontrou_genero
+  ) %>%
+  
+  select(
+    
+    especie_original,
+    
+    especie,
+    
+    familia,
+    
+    LifeForm,
+    
+    fonte_cruzamento
+    
+  ) %>%
+  
+  arrange(
+    especie
+  )
+
+
+# ============================================================
+# 27. CASOS SEM LIFEFORM
+# ============================================================
+
+sem_lifeform <- relativa_cruzada %>%
+  
+  filter(
+    !encontrou_lifeform
+  ) %>%
+  
+  select(
+    
+    especie_original,
+    
+    especie,
+    
+    familia,
+    
+    genero,
+    
+    fonte_cruzamento
+    
+  ) %>%
+  
+  arrange(
+    especie
+  )
+
+
+# ============================================================
+# 28. PREPARAR MATRIZ RELATIVA FINAL
+#
+# NÃO recalcular abundância relativa.
+# ============================================================
+
+matriz_relativa_final <- relativa_cruzada %>%
+  
+  select(
+    
+    especie_original,
+    
+    familia,
+    
+    genero,
+    
+    especie,
+    
+    identificacao,
+    
+    LifeForm,
+    
+    all_of(
+      inventarios_finais
+    )
+    
+  )
+
+
+# ============================================================
+# 29. PREPARAR MATRIZ ABSOLUTA FINAL
+# ============================================================
+
+matriz_absoluta_final <- absoluta_cruzada %>%
+  
+  select(
+    
+    especie_original,
+    
+    familia,
+    
+    genero,
+    
+    especie,
+    
+    identificacao,
+    
+    LifeForm,
+    
+    all_of(
+      inventarios_finais
+    )
+    
+  )
+
+
+# ============================================================
+# 30. CONFERIR DUPLICAÇÕES
+# ============================================================
+
+duplicacoes_relativa <- matriz_relativa_final %>%
+  
+  count(
+    especie,
+    name =
+      "numero_linhas"
+  ) %>%
+  
+  filter(
+    numero_linhas > 1
+  )
+
+
+duplicacoes_absoluta <- matriz_absoluta_final %>%
+  
+  count(
+    especie,
+    name =
+      "numero_linhas"
+  ) %>%
+  
+  filter(
+    numero_linhas > 1
+  )
+
+
+# ============================================================
+# 31. CONFERIR ABUNDÂNCIA ABSOLUTA RETIDA
+# ============================================================
+
+abundancia_absoluta_retida <- sum(
+  
+  unlist(
+    matriz_absoluta_final[
+      ,
+      inventarios_finais,
+      drop = FALSE
+    ],
+    use.names = FALSE
+  ),
+  
+  na.rm = TRUE
+  
+)
+
+
+# ============================================================
+# 32. SOMA DA ABUNDÂNCIA RELATIVA APÓS O FILTRO
+#
+# IMPORTANTE:
+#
+# Agora a soma NÃO precisa ser 1.
+#
+# Isso é correto, pois incompletas e sem correspondência
+# foram removidas, mas continuaram compondo o denominador.
+# ============================================================
+
+soma_relativa_final <- colSums(
+  
+  matriz_relativa_final[
+    ,
+    inventarios_finais,
+    drop = FALSE
+  ],
+  
+  na.rm = TRUE
+  
+)
+
+
+resumo_soma_relativa <- data.frame(
+  
+  inventario =
+    inventarios_finais,
+  
+  soma_abundancia_relativa_final =
+    as.numeric(
+      soma_relativa_final
+    ),
+  
+  stringsAsFactors = FALSE
+  
+)
+
+
+# ============================================================
+# 33. CONFERIR SE ALGUMA SOMA FINAL > 1
+#
+# Isso seria erro.
+# ============================================================
+
+inventarios_soma_maior_1 <- resumo_soma_relativa %>%
+  
+  filter(
+    soma_abundancia_relativa_final >
+      1 + 1e-10
+  )
+
+
+if (
+  nrow(
+    inventarios_soma_maior_1
+  ) > 0
+) {
+  
+  stop(
+    "Existem inventários cuja abundância relativa final é maior que 1."
+  )
+}
+
+
+# ============================================================
+# 34. CONFERIR VALORES RELATIVOS
+# ============================================================
+
+valores_relativos_finais <- unlist(
+  
+  matriz_relativa_final[
+    ,
+    inventarios_finais,
+    drop = FALSE
+  ],
+  
+  use.names = FALSE
+)
+
+
+valores_relativos_invalidos <- sum(
+  
+  valores_relativos_finais < 0 |
+    valores_relativos_finais >
+    1 + 1e-10,
+  
+  na.rm = TRUE
+  
+)
+
+
+# ============================================================
+# 35. COMPARAR ESTRUTURA DAS MATRIZES
+# ============================================================
+
+mesmas_especies <- identical(
+  
+  sort(
+    matriz_relativa_final$especie
+  ),
+  
+  sort(
+    matriz_absoluta_final$especie
+  )
+  
+)
+
+
+mesmos_inventarios <- identical(
+  
+  inventarios_finais,
+  
+  grep(
+    "^t[0-9]+$",
+    names(
+      matriz_relativa_final
+    ),
+    value = TRUE
+  )
+  
+)
+
+
+# ============================================================
+# 36. RESUMO FINAL
+# ============================================================
+
+resumo <- data.frame(
+  
+  Indicador = c(
+    
+    "Linhas antes do filtro taxonômico",
+    
+    "Espécies finais completas com correspondência",
+    
+    "Linhas excluídas no A4",
+    
+    "Número de inventários finais",
+    
+    "Espécies com algum cruzamento taxonômico",
+    
+    "Espécies sem cruzamento taxonômico",
+    
+    "Cruzamentos pelo REFLORA",
+    
+    "Cruzamentos pelo POWO - nome aceito",
+    
+    "Cruzamentos pelo POWO - nome encontrado",
+    
+    "Espécies com família",
+    
+    "Espécies sem família",
+    
+    "Espécies com gênero",
+    
+    "Espécies sem gênero",
+    
+    "Espécies com LifeForm",
+    
+    "Espécies sem LifeForm",
+    
+    "Conflitos taxonômicos/ecológicos",
+    
+    "Duplicações na matriz relativa",
+    
+    "Duplicações na matriz absoluta",
+    
+    "Abundância absoluta retida",
+    
+    "Valores relativos inválidos",
+    
+    "Inventários com soma relativa final maior que 1"
+    
+  ),
+  
+  Quantidade = c(
+    
+    nrow(
+      matriz_relativa
+    ),
+    
+    nrow(
+      matriz_relativa_final
+    ),
+    
+    nrow(
+      relativa_excluidas
+    ),
+    
+    length(
+      inventarios_finais
+    ),
+    
+    sum(
+      relativa_cruzada$
+        encontrou_taxonomia,
+      na.rm = TRUE
+    ),
+    
+    nrow(
+      nao_cruzaram
+    ),
+    
+    sum(
+      relativa_cruzada$
+        fonte_cruzamento ==
+        "REFLORA",
+      na.rm = TRUE
+    ),
+    
+    sum(
+      relativa_cruzada$
+        fonte_cruzamento ==
+        "POWO_nome_aceito",
+      na.rm = TRUE
+    ),
+    
+    sum(
+      relativa_cruzada$
+        fonte_cruzamento ==
+        "POWO_nome_encontrado",
+      na.rm = TRUE
+    ),
+    
+    sum(
+      relativa_cruzada$
+        encontrou_familia,
+      na.rm = TRUE
+    ),
+    
+    nrow(
+      sem_familia
+    ),
+    
+    sum(
+      relativa_cruzada$
+        encontrou_genero,
+      na.rm = TRUE
+    ),
+    
+    nrow(
+      sem_genero
+    ),
+    
+    sum(
+      relativa_cruzada$
+        encontrou_lifeform,
+      na.rm = TRUE
+    ),
+    
+    nrow(
+      sem_lifeform
+    ),
+    
+    nrow(
+      conflitos
+    ),
+    
+    nrow(
+      duplicacoes_relativa
+    ),
+    
+    nrow(
+      duplicacoes_absoluta
+    ),
+    
+    abundancia_absoluta_retida,
+    
+    valores_relativos_invalidos,
+    
+    nrow(
+      inventarios_soma_maior_1
+    )
+    
+  ),
+  
+  stringsAsFactors = FALSE
+)
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "RESUMO - A4 MATRIZES FINAIS\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+print(
+  resumo
+)
+
+cat(
+  "============================================\n"
+)
+
+
+# ============================================================
+# 37. SALVAR MATRIZ RELATIVA FINAL
+# ============================================================
+
+write.csv2(
+  
+  matriz_relativa_final,
+  
+  arquivo_saida_relativa_csv,
+  
+  row.names = FALSE,
+  
+  fileEncoding =
+    "latin1"
+  
+)
+
+
+write.xlsx(
+  
+  matriz_relativa_final,
+  
+  arquivo_saida_relativa_xlsx,
+  
+  overwrite = TRUE
+  
+)
+
+
+# ============================================================
+# 38. SALVAR MATRIZ ABSOLUTA FINAL
+# ============================================================
+
+write.csv2(
+  
+  matriz_absoluta_final,
+  
+  arquivo_saida_absoluta_csv,
+  
+  row.names = FALSE,
+  
+  fileEncoding =
+    "latin1"
+  
+)
+
+
+write.xlsx(
+  
+  matriz_absoluta_final,
+  
+  arquivo_saida_absoluta_xlsx,
+  
+  overwrite = TRUE
+  
+)
+
+
+# ============================================================
+# 39. SALVAR RELATÓRIO A4
+# ============================================================
+
+write.xlsx(
+  
+  list(
+    
+    resumo =
+      resumo,
+    
+    excluidas_A4 =
+      relativa_excluidas %>%
+      select(
+        especie_original,
+        especie,
+        identificacao,
+        status_harmonizacao
+      ),
+    
+    nao_cruzaram =
+      nao_cruzaram,
+    
+    sem_familia =
+      sem_familia,
+    
+    sem_genero =
+      sem_genero,
+    
+    sem_lifeform =
+      sem_lifeform,
+    
+    conflitos =
+      conflitos,
+    
+    duplicacoes_relativa =
+      duplicacoes_relativa,
+    
+    duplicacoes_absoluta =
+      duplicacoes_absoluta,
+    
+    soma_relativa_por_inventario =
+      resumo_soma_relativa,
+    
+    soma_maior_1 =
+      inventarios_soma_maior_1
+    
+  ),
+  
+  arquivo_relatorio,
+  
+  overwrite = TRUE
+  
+)
+
+
+# ============================================================
+# 40. FINAL
+# ============================================================
+
+cat(
+  "\nA4 CONCLUÍDO.\n"
+)
+
+cat(
+  "\nEspécies finais:",
+  nrow(
+    matriz_relativa_final
+  ),
+  "\n"
+)
+
+cat(
+  "Inventários finais:",
+  length(
+    inventarios_finais
+  ),
+  "\n"
+)
+
+cat(
+  "\nMatriz relativa final:\n",
+  arquivo_saida_relativa_csv,
+  "\n"
+)
+
+cat(
+  "\nMatriz absoluta final:\n",
+  arquivo_saida_absoluta_csv,
+  "\n"
+)
+
+cat(
+  "\nRelatório:\n",
+  arquivo_relatorio,
+  "\n"
+)
+
+cat(
+  "\nIMPORTANTE:\n"
+)
+
+cat(
+  "- abundância relativa NÃO foi recalculada após as exclusões\n"
+)
+
+cat(
+  "- incompletas e sem correspondência fizeram parte do denominador\n"
+)
+
+cat(
+  "- matriz relativa e absoluta possuem o mesmo conjunto final de espécies\n"
+)
+
+cat(
+  "- t897 permanece excluído de ambas as matrizes finais\n"
+)
