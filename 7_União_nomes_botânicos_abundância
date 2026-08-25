@@ -1,24 +1,40 @@
 # ============================================================
-# HARMONIZAÇÃO TAXONÔMICA DA MATRIZ DE ABUNDÂNCIA
+# MATRIZ DE ABUNDÂNCIA
+# SCRIPT A1
+# APLICAR HARMONIZAÇÃO BOTÂNICA JÁ CONFERIDA
 #
-# REGRAS DE CONSOLIDAÇÃO:
+# IMPORTANTE:
 #
-# completa:
-#   linhas equivalentes são consolidadas pelo nome aceito;
+# - NÃO excluir identificações incompletas
+# - NÃO excluir completas sem correspondência
+# - NÃO calcular abundância relativa ainda
+# - NÃO consolidar linhas ainda
 #
-# sem_correspondencia:
-#   linhas são consolidadas somente quando família, gênero
-#   e espécie originais são exatamente iguais;
+# Objetivo:
+# apenas aplicar o nome botânico corrigido às identificações
+# completas que possuem correspondência na tabela já conferida.
 #
-# incompleta:
-#   cada linha permanece independente e não é consolidada;
-#
-# todas as categorias permanecem juntas na matriz final.
 # ============================================================
 
 
-# Instalar somente se necessário:
-# install.packages(c("dplyr", "readxl", "stringr", "openxlsx"))
+# ============================================================
+# 0. PACOTES
+# ============================================================
+
+pacotes <- c(
+  "dplyr",
+  "readxl",
+  "stringr",
+  "openxlsx"
+)
+
+pacotes_faltantes <- pacotes[
+  !pacotes %in% rownames(installed.packages())
+]
+
+if (length(pacotes_faltantes) > 0) {
+  install.packages(pacotes_faltantes)
+}
 
 library(dplyr)
 library(readxl)
@@ -26,34 +42,140 @@ library(stringr)
 library(openxlsx)
 
 
+# ============================================================
+# 1. CAMINHOS
+# ============================================================
+
+pasta_caapora <-
+  "C:/Users/giuli/OneDrive/Documentos/Caapora"
+
+
 # ------------------------------------------------------------
-# 1. Caminhos
+# MATRIZ DE ABUNDÂNCIA JÁ FILTRADA
+#
+# Confira apenas o nome do arquivo.
 # ------------------------------------------------------------
 
 arquivo_matriz <- file.path(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_abundancia",
-  "Matriz_original_abundancia_brasil_identificacao_recorte1ha.csv"
+  pasta_caapora,
+  "Matrizes_abundancia",
+  "Matriz_original_abundancia_brasil_filtro_riqueza_area_identificacao.csv"
 )
 
+
+# ------------------------------------------------------------
+# TABELA TAXONÔMICA JÁ CONFERIDA
+# ------------------------------------------------------------
+
 arquivo_taxonomia <- file.path(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/nomes_botanicos",
+  pasta_caapora,
+  "nomes_botanicos",
   "especies_conferidas_reflora_taxon.xlsx"
 )
 
-pasta_resultados <- file.path(
-  "C:/Users/giuli/OneDrive/Documentos/Caapora/Matrizes_abundancia"
+
+# ------------------------------------------------------------
+# PASTA DE SAÍDA
+# ------------------------------------------------------------
+
+pasta_saida <- file.path(
+  pasta_caapora,
+  "Matrizes_abundancia",
+  "harmonizacao_botanica"
 )
 
 dir.create(
-  pasta_resultados,
+  pasta_saida,
   recursive = TRUE,
   showWarnings = FALSE
 )
 
 
-# ------------------------------------------------------------
-# 2. Ler a matriz de abundância
-# ------------------------------------------------------------
+arquivo_saida_csv <- file.path(
+  pasta_saida,
+  "Matriz_abundancia_harmonizada_nao_consolidada.csv"
+)
+
+
+arquivo_saida_xlsx <- file.path(
+  pasta_saida,
+  "Matriz_abundancia_harmonizada_nao_consolidada.xlsx"
+)
+
+
+arquivo_relatorio <- file.path(
+  pasta_saida,
+  "relatorio_A1_harmonizacao_abundancia.xlsx"
+)
+
+
+# ============================================================
+# 2. CONFERIR ARQUIVOS
+# ============================================================
+
+if (!file.exists(arquivo_matriz)) {
+  
+  stop(
+    paste0(
+      "Matriz de abundância não encontrada:\n",
+      arquivo_matriz
+    )
+  )
+}
+
+
+if (!file.exists(arquivo_taxonomia)) {
+  
+  stop(
+    paste0(
+      "Tabela taxonômica não encontrada:\n",
+      arquivo_taxonomia
+    )
+  )
+}
+
+
+# ============================================================
+# 3. FUNÇÃO PARA NORMALIZAR NOMES
+# ============================================================
+
+normalizar_nome <- function(x) {
+  
+  x <- as.character(x)
+  
+  x <- iconv(
+    x,
+    from = "",
+    to = "ASCII//TRANSLIT",
+    sub = ""
+  )
+  
+  x <- tolower(x)
+  
+  x <- gsub(
+    "_",
+    " ",
+    x,
+    fixed = TRUE
+  )
+  
+  x <- gsub(
+    "[[:space:]]+",
+    " ",
+    x
+  )
+  
+  x <- trimws(x)
+  
+  x[x == ""] <- NA_character_
+  
+  x
+}
+
+
+# ============================================================
+# 4. LER MATRIZ
+# ============================================================
 
 matriz <- read.csv2(
   arquivo_matriz,
@@ -63,42 +185,65 @@ matriz <- read.csv2(
   fileEncoding = "latin1"
 )
 
+
 cat(
-  "\nDimensões da matriz original:\n",
-  "Linhas:", nrow(matriz), "\n",
-  "Colunas:", ncol(matriz), "\n"
+  "\n============================================\n"
+)
+
+cat(
+  "A1 - MATRIZ DE ABUNDÂNCIA DE ENTRADA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Linhas:",
+  nrow(matriz),
+  "\n"
+)
+
+cat(
+  "Colunas:",
+  ncol(matriz),
+  "\n"
 )
 
 
-# ------------------------------------------------------------
-# 3. Conferir colunas obrigatórias
-# ------------------------------------------------------------
+# ============================================================
+# 5. CONFERIR COLUNAS OBRIGATÓRIAS
+# ============================================================
 
 colunas_obrigatorias <- c(
-  "familia",
-  "genero",
   "especie",
   "identificacao"
 )
 
-colunas_ausentes <- setdiff(
+
+faltando <- setdiff(
   colunas_obrigatorias,
   names(matriz)
 )
 
-if (length(colunas_ausentes) > 0) {
+
+if (length(faltando) > 0) {
+  
   stop(
     paste0(
-      "As seguintes colunas não foram encontradas na matriz: ",
-      paste(colunas_ausentes, collapse = ", ")
+      "Colunas obrigatórias ausentes:\n",
+      paste(
+        faltando,
+        collapse = ", "
+      )
     )
   )
 }
 
 
-# ------------------------------------------------------------
-# 4. Identificar as colunas dos inventários
-# ------------------------------------------------------------
+# ============================================================
+# 6. IDENTIFICAR COLUNAS DOS INVENTÁRIOS
+# ============================================================
 
 colunas_inventarios <- grep(
   "^t[0-9]+$",
@@ -106,11 +251,14 @@ colunas_inventarios <- grep(
   value = TRUE
 )
 
+
 if (length(colunas_inventarios) == 0) {
+  
   stop(
-    "Nenhuma coluna de inventário com padrão t + número foi encontrada."
+    "Nenhuma coluna de inventário t + número foi encontrada."
   )
 }
+
 
 cat(
   "Número de inventários:",
@@ -119,40 +267,102 @@ cat(
 )
 
 
-# ------------------------------------------------------------
-# 5. Guardar informações originais
-# ------------------------------------------------------------
+# ============================================================
+# 7. REMOVER LINHAS SEM NOME DE ESPÉCIE
+#
+# Mesma limpeza realizada na ocorrência:
+# remove linhas-resumo, linhas vazias e linhas com zeros
+# sem nome botânico.
+# ============================================================
+
+numero_linhas_antes_limpeza <-
+  nrow(matriz)
+
+
+especie_temp <- trimws(
+  as.character(
+    matriz$especie
+  )
+)
+
+
+linha_tem_especie <-
+  !is.na(especie_temp) &
+  especie_temp != ""
+
+
+linhas_sem_especie <- matriz[
+  !linha_tem_especie,
+  ,
+  drop = FALSE
+]
+
+
+matriz <- matriz[
+  linha_tem_especie,
+  ,
+  drop = FALSE
+]
+
+
+cat(
+  "\nLinhas sem espécie removidas:",
+  nrow(linhas_sem_especie),
+  "\n"
+)
+
+cat(
+  "Linhas válidas após limpeza:",
+  nrow(matriz),
+  "\n"
+)
+
+
+# ============================================================
+# 8. PREPARAR MATRIZ
+# ============================================================
 
 matriz <- matriz %>%
+  
   mutate(
-    numero_linha_original = row_number(),
     
-    familia_original = as.character(familia),
+    numero_linha_original =
+      row_number(),
     
-    genero_original = as.character(genero),
+    especie_original =
+      as.character(
+        especie
+      ),
     
-    especie_original = as.character(especie),
+    identificacao_original =
+      as.character(
+        identificacao
+      ),
     
-    identificacao_original = as.character(identificacao),
+    chave_taxonomica =
+      normalizar_nome(
+        especie_original
+      ),
     
-    chave_taxonomica = especie %>%
+    identificacao_padronizada =
+      identificacao_original %>%
       as.character() %>%
       str_squish() %>%
       str_to_lower(),
     
-    identificacao_padronizada = identificacao %>%
-      as.character() %>%
-      str_squish() %>%
-      str_to_lower()
+    identificacao_completa =
+      identificacao_padronizada ==
+      "completa"
+    
   )
 
 
-# ------------------------------------------------------------
-# 6. Conferir os valores da coluna identificacao
-# ------------------------------------------------------------
+# ============================================================
+# 9. RESUMO DAS IDENTIFICAÇÕES
+# ============================================================
 
 cat(
-  "\nValores originais encontrados na coluna identificacao:\n"
+  "\nValores de identificação:\n"
 )
 
 print(
@@ -164,9 +374,156 @@ print(
 )
 
 
-# ------------------------------------------------------------
-# 7. Ler a planilha taxonômica conferida
-# ------------------------------------------------------------
+numero_completas <-
+  sum(
+    matriz$identificacao_completa,
+    na.rm = TRUE
+  )
+
+
+numero_incompletas <-
+  sum(
+    !matriz$identificacao_completa,
+    na.rm = TRUE
+  )
+
+
+cat(
+  "\nIdentificações completas:",
+  numero_completas,
+  "\n"
+)
+
+cat(
+  "Identificações incompletas:",
+  numero_incompletas,
+  "\n"
+)
+
+
+# ============================================================
+# 10. CONVERTER INVENTÁRIOS PARA NUMÉRICO
+# ============================================================
+
+matriz <- matriz %>%
+  
+  mutate(
+    
+    across(
+      
+      all_of(
+        colunas_inventarios
+      ),
+      
+      ~ suppressWarnings(
+        
+        as.numeric(
+          
+          str_replace(
+            as.character(.x),
+            ",",
+            "."
+          )
+          
+        )
+        
+      )
+      
+    )
+    
+  )
+
+
+# ============================================================
+# 11. CONFERIR VALORES NEGATIVOS
+#
+# Abundância não pode ser negativa.
+# ============================================================
+
+valores_abundancia <- unlist(
+  
+  matriz[
+    ,
+    colunas_inventarios,
+    drop = FALSE
+  ],
+  
+  use.names = FALSE
+)
+
+
+valores_negativos <- valores_abundancia[
+  !is.na(valores_abundancia) &
+    valores_abundancia < 0
+]
+
+
+if (length(valores_negativos) > 0) {
+  
+  stop(
+    "Existem valores negativos na matriz de abundância."
+  )
+}
+
+
+# ============================================================
+# 12. CALCULAR ABUNDÂNCIA TOTAL ORIGINAL
+#
+# Este total será usado posteriormente para conferir
+# preservação da abundância durante a consolidação.
+# ============================================================
+
+abundancia_total_original <-
+  sum(
+    valores_abundancia,
+    na.rm = TRUE
+  )
+
+
+cat(
+  "\nAbundância total original:",
+  abundancia_total_original,
+  "\n"
+)
+
+
+# ============================================================
+# 13. TOTAL DE INDIVÍDUOS POR INVENTÁRIO
+#
+# IMPORTANTE:
+#
+# Este é o denominador que usaremos mais adiante
+# no cálculo da abundância relativa.
+#
+# Ele é calculado AGORA, antes de excluir:
+#
+# - identificações incompletas
+# - completas sem correspondência
+# ============================================================
+
+totais_inventarios <- data.frame(
+  
+  inventario =
+    colunas_inventarios,
+  
+  abundancia_total =
+    colSums(
+      matriz[
+        ,
+        colunas_inventarios,
+        drop = FALSE
+      ],
+      na.rm = TRUE
+    ),
+  
+  stringsAsFactors = FALSE
+  
+)
+
+
+# ============================================================
+# 14. LER TABELA TAXONÔMICA CONFERIDA
+# ============================================================
 
 taxonomia <- read_excel(
   arquivo_taxonomia,
@@ -174,1375 +531,605 @@ taxonomia <- read_excel(
   .name_repair = "unique"
 )
 
+
+taxonomia <- as.data.frame(
+  taxonomia,
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+
 cat(
-  "\nColunas da planilha taxonômica:\n"
+  "\nColunas da tabela taxonômica:\n"
 )
 
 print(
   names(taxonomia)
 )
 
-# A primeira coluna contém o nome original utilizado
-# como chave taxonômica.
 
-nome_primeira_coluna <- names(taxonomia)[1]
+# ============================================================
+# 15. DEFINIR COLUNA-CHAVE
+# ============================================================
+
+nome_primeira_coluna <-
+  names(taxonomia)[1]
+
 
 taxonomia <- taxonomia %>%
+  
   rename(
-    chave_taxonomica = all_of(nome_primeira_coluna)
+    chave_taxonomica =
+      all_of(
+        nome_primeira_coluna
+      )
   )
 
 
-# ------------------------------------------------------------
-# 8. Conferir as colunas taxonômicas necessárias
-# ------------------------------------------------------------
+# ============================================================
+# 16. CONFERIR COLUNA COM NOME ACEITO
+# ============================================================
 
-colunas_taxonomicas_obrigatorias <- c(
-  "nome_aceito_reflora",
-  "familia_reflora"
-)
-
-colunas_taxonomicas_ausentes <- setdiff(
-  colunas_taxonomicas_obrigatorias,
-  names(taxonomia)
-)
-
-if (length(colunas_taxonomicas_ausentes) > 0) {
+if (
+  !"nome_aceito_reflora" %in%
+    names(taxonomia)
+) {
+  
   stop(
-    paste0(
-      "As seguintes colunas não foram encontradas na planilha taxonômica: ",
-      paste(
-        colunas_taxonomicas_ausentes,
-        collapse = ", "
-      )
-    )
+    "A coluna 'nome_aceito_reflora' não foi encontrada na tabela."
   )
 }
 
 
-# ------------------------------------------------------------
-# 9. Preparar a tabela taxonômica
-# ------------------------------------------------------------
+# ============================================================
+# 17. PREPARAR TABELA TAXONÔMICA
+# ============================================================
 
 taxonomia <- taxonomia %>%
+  
   mutate(
-    chave_taxonomica = chave_taxonomica %>%
-      as.character() %>%
-      str_squish() %>%
-      str_to_lower(),
     
-    nome_aceito_reflora = nome_aceito_reflora %>%
-      as.character() %>%
+    chave_taxonomica =
+      normalizar_nome(
+        chave_taxonomica
+      ),
+    
+    nome_aceito_reflora =
+      as.character(
+        nome_aceito_reflora
+      ) %>%
       str_squish(),
     
-    familia_reflora = familia_reflora %>%
-      as.character() %>%
-      str_squish()
-  )
-
-
-# ------------------------------------------------------------
-# 10. Retirar a autoria do nome aceito
-# ------------------------------------------------------------
-
-# Mantém apenas gênero e epíteto específico.
-#
-# Exemplo:
-#
-# Abarema acreana (J.F.Macbr.) L.Rico
-# passa para:
-# Abarema acreana
-
-taxonomia <- taxonomia %>%
-  mutate(
-    nome_aceito_sem_autoria = case_when(
-      is.na(nome_aceito_reflora) ~ NA_character_,
-      
-      nome_aceito_reflora == "" ~ NA_character_,
-      
-      str_to_upper(nome_aceito_reflora) == "NA" ~ NA_character_,
-      
-      TRUE ~ word(
-        nome_aceito_reflora,
-        start = 1,
-        end = 2
+    especie_harmonizada =
+      case_when(
+        
+        is.na(
+          nome_aceito_reflora
+        ) ~
+          
+          NA_character_,
+        
+        nome_aceito_reflora ==
+          "" ~
+          
+          NA_character_,
+        
+        str_to_upper(
+          nome_aceito_reflora
+        ) ==
+          "NA" ~
+          
+          NA_character_,
+        
+        TRUE ~
+          
+          word(
+            nome_aceito_reflora,
+            start = 1,
+            end = 2
+          )
+        
       )
-    ),
     
-    genero_aceito = case_when(
-      is.na(nome_aceito_sem_autoria) ~ NA_character_,
-      
-      nome_aceito_sem_autoria == "" ~ NA_character_,
-      
-      TRUE ~ word(
-        nome_aceito_sem_autoria,
-        start = 1,
-        end = 1
-      )
-    )
   )
 
 
-# ------------------------------------------------------------
-# 11. Verificar chaves repetidas
-# ------------------------------------------------------------
-
-chaves_repetidas <- taxonomia %>%
-  filter(
-    !is.na(chave_taxonomica),
-    chave_taxonomica != ""
-  ) %>%
-  count(
-    chave_taxonomica,
-    name = "numero_registros"
-  ) %>%
-  filter(
-    numero_registros > 1
-  ) %>%
-  arrange(
-    desc(numero_registros),
-    chave_taxonomica
-  )
-
-cat(
-  "\nChaves repetidas na planilha taxonômica:",
-  nrow(chaves_repetidas),
-  "\n"
-)
-
-write.xlsx(
-  chaves_repetidas,
-  file.path(
-    pasta_resultados,
-    "abundancia_chaves_repetidas_na_planilha_taxonomica.xlsx"
-  ),
-  overwrite = TRUE
-)
-
-
-# ------------------------------------------------------------
-# 12. Verificar conflitos taxonômicos
-# ------------------------------------------------------------
+# ============================================================
+# 18. CONFERIR CONFLITOS NA TABELA
+# ============================================================
 
 conflitos_taxonomicos <- taxonomia %>%
+  
   filter(
-    !is.na(chave_taxonomica),
-    chave_taxonomica != ""
+    !is.na(
+      chave_taxonomica
+    )
   ) %>%
+  
   group_by(
     chave_taxonomica
   ) %>%
+  
   summarise(
-    numero_nomes_aceitos = n_distinct(
-      nome_aceito_sem_autoria,
-      na.rm = TRUE
-    ),
     
-    nomes_aceitos = paste(
-      sort(
-        unique(
-          na.omit(nome_aceito_sem_autoria)
-        )
+    numero_nomes_aceitos =
+      n_distinct(
+        especie_harmonizada,
+        na.rm = TRUE
       ),
-      collapse = " | "
-    ),
     
-    familias = paste(
-      sort(
-        unique(
-          na.omit(familia_reflora)
-        )
+    nomes_aceitos =
+      paste(
+        sort(
+          unique(
+            na.omit(
+              especie_harmonizada
+            )
+          )
+        ),
+        collapse = " | "
       ),
-      collapse = " | "
-    ),
     
     .groups = "drop"
+    
   ) %>%
+  
   filter(
     numero_nomes_aceitos > 1
   )
 
+
 cat(
-  "Chaves com mais de um nome aceito:",
-  nrow(conflitos_taxonomicos),
+  "\nConflitos taxonômicos:",
+  nrow(
+    conflitos_taxonomicos
+  ),
   "\n"
 )
 
-write.xlsx(
-  conflitos_taxonomicos,
-  file.path(
-    pasta_resultados,
-    "abundancia_conflitos_de_nomes_aceitos.xlsx"
-  ),
-  overwrite = TRUE
-)
 
-
-# ------------------------------------------------------------
-# 13. Manter uma correspondência por chave
-# ------------------------------------------------------------
+# ============================================================
+# 19. CRIAR LOOKUP ÚNICO
+# ============================================================
 
 taxonomia_unica <- taxonomia %>%
+  
   filter(
-    !is.na(chave_taxonomica),
+    !is.na(
+      chave_taxonomica
+    ),
     chave_taxonomica != ""
   ) %>%
+  
   arrange(
+    
     chave_taxonomica,
-    is.na(nome_aceito_sem_autoria),
-    nome_aceito_sem_autoria
+    
+    is.na(
+      especie_harmonizada
+    )
+    
   ) %>%
+  
   distinct(
     chave_taxonomica,
     .keep_all = TRUE
   ) %>%
+  
   select(
+    
     chave_taxonomica,
+    
     nome_aceito_reflora,
-    nome_aceito_sem_autoria,
-    genero_aceito,
-    familia_reflora
+    
+    especie_harmonizada
+    
   )
 
 
-# ------------------------------------------------------------
-# 14. Juntar matriz e tabela taxonômica
-# ------------------------------------------------------------
+# ============================================================
+# 20. JUNTAR MATRIZ + TAXONOMIA
+# ============================================================
 
 matriz_harmonizada <- matriz %>%
+  
   left_join(
+    
     taxonomia_unica,
-    by = "chave_taxonomica"
+    
+    by =
+      "chave_taxonomica"
+    
   )
 
 
-# ------------------------------------------------------------
-# 15. Identificar as linhas que podem ser harmonizadas
-# ------------------------------------------------------------
+# ============================================================
+# 21. IDENTIFICAR CORRESPONDÊNCIA
+# ============================================================
 
 matriz_harmonizada <- matriz_harmonizada %>%
+  
   mutate(
-    identificacao_completa =
-      identificacao_padronizada == "completa",
     
     encontrou_correspondencia =
-      !is.na(nome_aceito_sem_autoria) &
-      nome_aceito_sem_autoria != "",
+      !is.na(
+        especie_harmonizada
+      ) &
+      especie_harmonizada != "",
     
     harmonizacao_realizada =
       identificacao_completa &
       encontrou_correspondencia
+    
   )
 
 
-# ------------------------------------------------------------
-# 16. Substituir espécie, gênero e família
-# ------------------------------------------------------------
+# ============================================================
+# 22. APLICAR NOME CORRIGIDO
+#
+# Somente às identificações completas com correspondência.
+#
+# Incompletas permanecem exatamente como estavam.
+#
+# Completas sem correspondência também permanecem com
+# o nome original POR ENQUANTO.
+# ============================================================
 
 matriz_harmonizada <- matriz_harmonizada %>%
+  
   mutate(
-    especie = case_when(
-      harmonizacao_realizada ~ nome_aceito_sem_autoria,
-      
-      TRUE ~ especie_original
-    ),
     
-    genero = case_when(
-      harmonizacao_realizada &
-        !is.na(genero_aceito) &
-        genero_aceito != "" ~ genero_aceito,
-      
-      TRUE ~ genero_original
-    ),
+    especie =
+      case_when(
+        
+        harmonizacao_realizada ~
+          
+          especie_harmonizada,
+        
+        TRUE ~
+          
+          especie_original
+      ),
     
-    familia = case_when(
-      harmonizacao_realizada &
-        !is.na(familia_reflora) &
-        familia_reflora != "" ~ familia_reflora,
-      
-      TRUE ~ familia_original
-    )
+    identificacao =
+      identificacao_original
+    
   )
 
 
-# ------------------------------------------------------------
-# 17. Atualizar a coluna identificacao
-# ------------------------------------------------------------
-
-# Categorias finais:
+# ============================================================
+# 23. REGISTRAR COMPLETAS SEM CORRESPONDÊNCIA
 #
-# completa:
-# identificação completa com correspondência taxonômica;
-#
-# sem_correspondencia:
-# identificação completa sem nome aceito correspondente;
-#
-# incompleta:
-# identificação originalmente incompleta.
-
-matriz_harmonizada <- matriz_harmonizada %>%
-  mutate(
-    identificacao = case_when(
-      identificacao_completa &
-        encontrou_correspondencia ~ "completa",
-      
-      identificacao_completa &
-        !encontrou_correspondencia ~ "sem_correspondencia",
-      
-      TRUE ~ identificacao_original
-    )
-  )
-
-cat(
-  "\nValores finais da coluna identificacao:\n"
-)
-
-print(
-  matriz_harmonizada %>%
-    count(
-      identificacao,
-      sort = TRUE
-    )
-)
-
-
-# ------------------------------------------------------------
-# 18. Registrar identificações sem correspondência
-# ------------------------------------------------------------
+# NÃO serão excluídas agora.
+# ============================================================
 
 completas_sem_correspondencia <- matriz_harmonizada %>%
+  
   filter(
-    identificacao == "sem_correspondencia"
+    
+    identificacao_completa,
+    
+    !encontrou_correspondencia
+    
   ) %>%
+  
   select(
+    
     numero_linha_original,
-    familia_original,
-    genero_original,
+    
     especie_original,
+    
     identificacao_original,
+    
     chave_taxonomica
+    
   ) %>%
+  
   arrange(
     especie_original
   )
 
-cat(
-  "\nIdentificações completas sem correspondência:",
-  nrow(completas_sem_correspondencia),
-  "\n"
-)
 
-write.xlsx(
-  completas_sem_correspondencia,
-  file.path(
-    pasta_resultados,
-    "abundancia_identificacoes_completas_sem_correspondencia.xlsx"
-  ),
-  overwrite = TRUE
-)
-
-
-# ------------------------------------------------------------
-# 19. Criar tabela dos nomes harmonizados
-# ------------------------------------------------------------
+# ============================================================
+# 24. NOMES HARMONIZADOS
+# ============================================================
 
 nomes_harmonizados <- matriz_harmonizada %>%
+  
   filter(
     harmonizacao_realizada
   ) %>%
+  
   transmute(
+    
     numero_linha_original,
     
-    familia_original,
-    genero_original,
     especie_original,
     
-    familia_harmonizada = familia,
-    genero_harmonizado = genero,
-    especie_harmonizada = especie,
+    especie_harmonizada =
+      especie,
     
-    nome_aceito_com_autoria = nome_aceito_reflora
+    nome_aceito_com_autoria =
+      nome_aceito_reflora
+    
   ) %>%
+  
   arrange(
     especie_original
   )
 
-cat(
-  "Linhas harmonizadas:",
-  nrow(nomes_harmonizados),
-  "\n"
-)
 
-
-# ------------------------------------------------------------
-# 20. Identificar nomes efetivamente alterados
-# ------------------------------------------------------------
+# ============================================================
+# 25. NOMES EFETIVAMENTE ALTERADOS
+# ============================================================
 
 nomes_alterados <- nomes_harmonizados %>%
+  
   filter(
-    str_to_lower(
-      str_squish(especie_original)
+    
+    normalizar_nome(
+      especie_original
     ) !=
-      str_to_lower(
-        str_squish(especie_harmonizada)
-      ) |
-      
-      str_to_lower(
-        str_squish(genero_original)
-      ) !=
-      str_to_lower(
-        str_squish(genero_harmonizado)
-      ) |
-      
-      str_to_lower(
-        str_squish(familia_original)
-      ) !=
-      str_to_lower(
-        str_squish(familia_harmonizada)
+      normalizar_nome(
+        especie_harmonizada
       )
+    
   )
 
 
-# ------------------------------------------------------------
-# 21. Identificar mudanças de gênero
-# ------------------------------------------------------------
-
-mudancas_genero <- nomes_harmonizados %>%
-  filter(
-    str_to_lower(
-      str_squish(genero_original)
-    ) !=
-      str_to_lower(
-        str_squish(genero_harmonizado)
-      )
-  )
-
-
-# ------------------------------------------------------------
-# 22. Identificar mudanças de família
-# ------------------------------------------------------------
-
-mudancas_familia <- nomes_harmonizados %>%
-  filter(
-    str_to_lower(
-      str_squish(familia_original)
-    ) !=
-      str_to_lower(
-        str_squish(familia_harmonizada)
-      )
-  )
-
-
-# ------------------------------------------------------------
-# 23. Conferir identificações incompletas
-# ------------------------------------------------------------
-
-# As identificações incompletas devem permanecer
-# exatamente como estavam na matriz original.
-
-incompletas_alteradas <- matriz_harmonizada %>%
-  filter(
-    identificacao_padronizada == "incompleta",
-    (
-      as.character(familia) !=
-        as.character(familia_original) |
-        
-        as.character(genero) !=
-        as.character(genero_original) |
-        
-        as.character(especie) !=
-        as.character(especie_original)
-    )
-  )
-
-cat(
-  "Identificações incompletas alteradas:",
-  nrow(incompletas_alteradas),
-  "\n"
-)
-
-if (nrow(incompletas_alteradas) > 0) {
-  write.xlsx(
-    incompletas_alteradas,
-    file.path(
-      pasta_resultados,
-      "ATENCAO_abundancia_identificacoes_incompletas_alteradas.xlsx"
-    ),
-    overwrite = TRUE
-  )
-}
-
-
-# ------------------------------------------------------------
-# 24. Converter as colunas dos inventários para números
-# ------------------------------------------------------------
-
-matriz_antes_conversao <- matriz_harmonizada
+# ============================================================
+# 26. CRIAR STATUS PARA PRÓXIMAS ETAPAS
+#
+# Este campo será MUITO importante no A2/A3.
+# ============================================================
 
 matriz_harmonizada <- matriz_harmonizada %>%
+  
   mutate(
-    across(
-      all_of(colunas_inventarios),
-      ~ suppressWarnings(
-        as.numeric(
-          str_replace(
-            as.character(.x),
-            ",",
-            "."
-          )
-        )
-      )
-    )
-  )
-
-
-# ------------------------------------------------------------
-# 25. Conferir problemas na conversão numérica
-# ------------------------------------------------------------
-
-problemas_conversao <- data.frame(
-  inventario = character(),
-  numero_linha_original = integer(),
-  especie = character(),
-  valor_original = character(),
-  stringsAsFactors = FALSE
-)
-
-for (coluna in colunas_inventarios) {
-  
-  original <- as.character(
-    matriz_antes_conversao[[coluna]]
-  )
-  
-  convertido <- matriz_harmonizada[[coluna]]
-  
-  problema <-
-    !is.na(original) &
-    trimws(original) != "" &
-    is.na(convertido)
-  
-  if (any(problema)) {
     
-    problemas_conversao <- bind_rows(
-      problemas_conversao,
-      
-      data.frame(
-        inventario = coluna,
+    status_harmonizacao =
+      case_when(
         
-        numero_linha_original =
-          matriz_harmonizada$
-          numero_linha_original[problema],
+        identificacao_completa &
+          encontrou_correspondencia ~
+          
+          "completa_com_correspondencia",
         
-        especie =
-          matriz_harmonizada$
-          especie[problema],
+        identificacao_completa &
+          !encontrou_correspondencia ~
+          
+          "completa_sem_correspondencia",
         
-        valor_original =
-          original[problema],
+        TRUE ~
+          
+          "incompleta"
         
-        stringsAsFactors = FALSE
       )
-    )
-  }
-}
-
-cat(
-  "Células que não puderam ser convertidas em números:",
-  nrow(problemas_conversao),
-  "\n"
-)
-
-write.xlsx(
-  problemas_conversao,
-  file.path(
-    pasta_resultados,
-    "abundancia_problemas_na_conversao_numerica.xlsx"
-  ),
-  overwrite = TRUE
-)
-
-if (nrow(problemas_conversao) > 0) {
-  stop(
-    paste0(
-      "Existem valores que não puderam ser convertidos em números. ",
-      "Confira abundancia_problemas_na_conversao_numerica.xlsx."
-    )
-  )
-}
-
-
-# ------------------------------------------------------------
-# 26. Conferir abundâncias negativas
-# ------------------------------------------------------------
-
-valores_negativos <- data.frame(
-  inventario = character(),
-  numero_linha_original = integer(),
-  especie = character(),
-  valor = numeric(),
-  stringsAsFactors = FALSE
-)
-
-for (coluna in colunas_inventarios) {
-  
-  valores <- matriz_harmonizada[[coluna]]
-  
-  problema <-
-    !is.na(valores) &
-    valores < 0
-  
-  if (any(problema)) {
     
-    valores_negativos <- bind_rows(
-      valores_negativos,
-      
-      data.frame(
-        inventario = coluna,
-        
-        numero_linha_original =
-          matriz_harmonizada$
-          numero_linha_original[problema],
-        
-        especie =
-          matriz_harmonizada$
-          especie[problema],
-        
-        valor =
-          valores[problema],
-        
-        stringsAsFactors = FALSE
-      )
-    )
-  }
-}
-
-cat(
-  "Células com valores negativos:",
-  nrow(valores_negativos),
-  "\n"
-)
-
-write.xlsx(
-  valores_negativos,
-  file.path(
-    pasta_resultados,
-    "abundancia_valores_negativos.xlsx"
-  ),
-  overwrite = TRUE
-)
-
-if (nrow(valores_negativos) > 0) {
-  stop(
-    paste0(
-      "Foram encontrados valores negativos de abundância. ",
-      "Confira abundancia_valores_negativos.xlsx."
-    )
   )
-}
 
 
-# ------------------------------------------------------------
-# 27. Criar chave de consolidação
-# ------------------------------------------------------------
-
-# completa:
-# une pelo nome aceito após a harmonização;
+# ============================================================
+# 27. MATRIZ DE SAÍDA A1
 #
-# sem_correspondencia:
-# une somente quando família, gênero e espécie originais
-# são exatamente iguais;
-#
-# incompleta:
-# mantém cada linha original separada.
+# Mantemos todas as linhas.
+# ============================================================
 
-matriz_harmonizada <- matriz_harmonizada %>%
-  mutate(
-    chave_consolidacao = case_when(
-      
-      identificacao == "completa" ~ paste(
-        "completa",
-        str_to_lower(str_squish(as.character(familia))),
-        str_to_lower(str_squish(as.character(genero))),
-        str_to_lower(str_squish(as.character(especie))),
-        sep = " | "
-      ),
-      
-      identificacao == "sem_correspondencia" ~ paste(
-        "sem_correspondencia",
-        str_to_lower(str_squish(as.character(familia_original))),
-        str_to_lower(str_squish(as.character(genero_original))),
-        str_to_lower(str_squish(as.character(especie_original))),
-        sep = " | "
-      ),
-      
-      identificacao == "incompleta" ~ paste0(
-        "incompleta | linha_",
-        numero_linha_original
-      ),
-      
-      TRUE ~ paste0(
-        "outra | linha_",
-        numero_linha_original
-      )
-    )
-  )
-
-
-# ------------------------------------------------------------
-# 28. Identificar linhas que serão consolidadas
-# ------------------------------------------------------------
-
-resumo_consolidacao <- matriz_harmonizada %>%
-  group_by(
-    chave_consolidacao
-  ) %>%
-  summarise(
-    familia = first(familia),
-    
-    genero = first(genero),
-    
-    especie = first(especie),
-    
-    identificacao = first(identificacao),
-    
-    numero_linhas_unidas = n(),
-    
-    numeros_linhas_originais = paste(
-      numero_linha_original,
-      collapse = " | "
-    ),
-    
-    nomes_originais = paste(
-      sort(
-        unique(especie_original)
-      ),
-      collapse = " | "
-    ),
-    
-    .groups = "drop"
-  ) %>%
-  arrange(
-    desc(numero_linhas_unidas),
-    especie
-  )
-
-linhas_realmente_unidas <- resumo_consolidacao %>%
-  filter(
-    numero_linhas_unidas > 1
-  )
-
-cat(
-  "\nTáxons que terão duas ou mais linhas consolidadas:",
-  nrow(linhas_realmente_unidas),
-  "\n"
-)
-
-cat(
-  "Grupos completos consolidados:",
-  sum(
-    linhas_realmente_unidas$identificacao == "completa",
-    na.rm = TRUE
-  ),
-  "\n"
-)
-
-cat(
-  "Grupos sem correspondência consolidados:",
-  sum(
-    linhas_realmente_unidas$identificacao ==
-      "sem_correspondencia",
-    na.rm = TRUE
-  ),
-  "\n"
-)
-
-cat(
-  "Identificações incompletas consolidadas:",
-  sum(
-    linhas_realmente_unidas$identificacao == "incompleta",
-    na.rm = TRUE
-  ),
-  "\n"
-)
-
-if (
-  any(
-    linhas_realmente_unidas$identificacao == "incompleta",
-    na.rm = TRUE
-  )
-) {
-  stop(
-    paste0(
-      "Foram consolidadas identificações incompletas. ",
-      "Isso não deveria acontecer."
-    )
-  )
-}
-
-
-# ------------------------------------------------------------
-# 29. Somar as abundâncias das linhas consolidadas
-# ------------------------------------------------------------
-
-# Quando todas as linhas de um grupo possuem NA em determinado
-# inventário, o resultado permanece NA.
-
-soma_sem_transformar_tudo_em_zero <- function(x) {
+matriz_saida <- matriz_harmonizada %>%
   
-  if (all(is.na(x))) {
-    return(NA_real_)
-  }
-  
+  select(
+    
+    especie_original,
+    
+    especie,
+    
+    identificacao,
+    
+    status_harmonizacao,
+    
+    all_of(
+      colunas_inventarios
+    )
+    
+  )
+
+
+# ============================================================
+# 28. CONFERIR ABUNDÂNCIA TOTAL APÓS HARMONIZAÇÃO
+#
+# Ainda não houve consolidação.
+# Portanto o total precisa ser IDENTICO.
+# ============================================================
+
+abundancia_total_apos_harmonizacao <-
   sum(
-    x,
+    unlist(
+      matriz_saida[
+        ,
+        colunas_inventarios,
+        drop = FALSE
+      ],
+      use.names = FALSE
+    ),
     na.rm = TRUE
   )
-}
 
-matriz_final <- matriz_harmonizada %>%
-  select(
-    chave_consolidacao,
-    familia,
-    genero,
-    especie,
-    identificacao,
-    all_of(colunas_inventarios)
-  ) %>%
-  group_by(
-    chave_consolidacao
-  ) %>%
-  summarise(
-    familia = first(familia),
-    
-    genero = first(genero),
-    
-    especie = first(especie),
-    
-    identificacao = first(identificacao),
-    
-    across(
-      all_of(colunas_inventarios),
-      soma_sem_transformar_tudo_em_zero
-    ),
-    
-    .groups = "drop"
-  ) %>%
-  select(
-    familia,
-    genero,
-    especie,
-    identificacao,
-    all_of(colunas_inventarios)
-  )
-
-
-# ------------------------------------------------------------
-# 30. Conferir abundâncias negativas na matriz final
-# ------------------------------------------------------------
-
-valores_finais <- unlist(
-  matriz_final[
-    ,
-    colunas_inventarios,
-    drop = FALSE
-  ],
-  use.names = FALSE
-)
-
-valores_finais_negativos <- valores_finais[
-  !is.na(valores_finais) &
-    valores_finais < 0
-]
-
-if (length(valores_finais_negativos) > 0) {
-  stop(
-    "A matriz final contém abundâncias negativas."
-  )
-}
-
-
-# ------------------------------------------------------------
-# 31. Conferir duplicações na matriz final
-# ------------------------------------------------------------
-
-# Esta verificação considera as quatro colunas taxonômicas.
-#
-# Identificações incompletas iguais podem permanecer em linhas
-# diferentes intencionalmente. Portanto, também é criada uma
-# tabela específica para conferência.
-
-duplicacoes_finais <- matriz_final %>%
-  count(
-    familia,
-    genero,
-    especie,
-    identificacao,
-    name = "numero_linhas"
-  ) %>%
-  filter(
-    numero_linhas > 1
-  )
-
-duplicacoes_completas_finais <- duplicacoes_finais %>%
-  filter(
-    identificacao == "completa"
-  )
-
-duplicacoes_sem_correspondencia_finais <-
-  duplicacoes_finais %>%
-  filter(
-    identificacao == "sem_correspondencia"
-  )
-
-duplicacoes_incompletas_finais <-
-  duplicacoes_finais %>%
-  filter(
-    identificacao == "incompleta"
-  )
-
-cat(
-  "Duplicações completas na matriz final:",
-  nrow(duplicacoes_completas_finais),
-  "\n"
-)
-
-cat(
-  "Duplicações sem correspondência na matriz final:",
-  nrow(duplicacoes_sem_correspondencia_finais),
-  "\n"
-)
-
-cat(
-  "Nomes incompletos repetidos mantidos separadamente:",
-  nrow(duplicacoes_incompletas_finais),
-  "\n"
-)
-
-if (nrow(duplicacoes_completas_finais) > 0) {
-  stop(
-    "A matriz final ainda contém identificações completas duplicadas."
-  )
-}
-
-if (nrow(duplicacoes_sem_correspondencia_finais) > 0) {
-  stop(
-    paste0(
-      "A matriz final ainda contém nomes sem correspondência ",
-      "duplicados."
-    )
-  )
-}
-
-
-# ------------------------------------------------------------
-# 32. Calcular abundância total e frequência
-# ------------------------------------------------------------
-
-resumo_especies <- matriz_final %>%
-  mutate(
-    abundancia_total = rowSums(
-      across(
-        all_of(colunas_inventarios)
-      ),
-      na.rm = TRUE
-    ),
-    
-    numero_inventarios = rowSums(
-      across(
-        all_of(colunas_inventarios),
-        ~ !is.na(.x) & .x > 0
-      )
-    )
-  ) %>%
-  select(
-    familia,
-    genero,
-    especie,
-    identificacao,
-    abundancia_total,
-    numero_inventarios
-  ) %>%
-  arrange(
-    desc(abundancia_total),
-    especie
-  )
-
-
-# ------------------------------------------------------------
-# 33. Comparar abundância total antes e depois
-# ------------------------------------------------------------
-
-abundancia_total_antes <- sum(
-  unlist(
-    matriz_harmonizada[
-      ,
-      colunas_inventarios,
-      drop = FALSE
-    ],
-    use.names = FALSE
-  ),
-  na.rm = TRUE
-)
-
-abundancia_total_depois <- sum(
-  unlist(
-    matriz_final[
-      ,
-      colunas_inventarios,
-      drop = FALSE
-    ],
-    use.names = FALSE
-  ),
-  na.rm = TRUE
-)
 
 diferenca_abundancia <-
-  abundancia_total_depois -
-  abundancia_total_antes
+  abundancia_total_apos_harmonizacao -
+  abundancia_total_original
 
-cat(
-  "\nAbundância total antes da consolidação:",
-  abundancia_total_antes,
-  "\nAbundância total depois da consolidação:",
-  abundancia_total_depois,
-  "\nDiferença:",
-  diferenca_abundancia,
-  "\n"
-)
 
 if (
-  !isTRUE(
-    all.equal(
-      abundancia_total_antes,
-      abundancia_total_depois
-    )
-  )
+  abs(
+    diferenca_abundancia
+  ) >
+    1e-8
 ) {
+  
   stop(
     paste0(
-      "A abundância total antes e depois da consolidação ",
-      "é diferente."
+      "A abundância total mudou durante a harmonização!\n",
+      "Antes: ",
+      abundancia_total_original,
+      "\nDepois: ",
+      abundancia_total_apos_harmonizacao
     )
   )
 }
 
 
-# ------------------------------------------------------------
-# 34. Calcular abundância total por inventário
-# ------------------------------------------------------------
+# ============================================================
+# 29. RESUMO
+# ============================================================
 
-# Esta soma inclui:
-#
-# - identificações completas;
-# - identificações sem correspondência;
-# - identificações incompletas.
-#
-# Esse total deverá ser usado posteriormente como denominador
-# no cálculo da abundância relativa.
-
-abundancia_total_por_inventario <- data.frame(
-  inventario = colunas_inventarios,
+resumo <- data.frame(
   
-  abundancia_total = colSums(
-    matriz_final[
-      ,
-      colunas_inventarios,
-      drop = FALSE
-    ],
-    na.rm = TRUE
+  Indicador = c(
+    
+    "Linhas lidas no arquivo",
+    
+    "Linhas sem espécie removidas",
+    
+    "Linhas válidas",
+    
+    "Número de inventários",
+    
+    "Identificações completas",
+    
+    "Identificações incompletas",
+    
+    "Completas com correspondência",
+    
+    "Completas sem correspondência",
+    
+    "Nomes efetivamente alterados",
+    
+    "Abundância total antes da harmonização",
+    
+    "Abundância total depois da harmonização",
+    
+    "Diferença na abundância"
+    
+  ),
+  
+  Quantidade = c(
+    
+    numero_linhas_antes_limpeza,
+    
+    nrow(
+      linhas_sem_especie
+    ),
+    
+    nrow(
+      matriz_saida
+    ),
+    
+    length(
+      colunas_inventarios
+    ),
+    
+    numero_completas,
+    
+    numero_incompletas,
+    
+    sum(
+      matriz_saida$
+        status_harmonizacao ==
+        "completa_com_correspondencia"
+    ),
+    
+    sum(
+      matriz_saida$
+        status_harmonizacao ==
+        "completa_sem_correspondencia"
+    ),
+    
+    nrow(
+      nomes_alterados
+    ),
+    
+    abundancia_total_original,
+    
+    abundancia_total_apos_harmonizacao,
+    
+    diferenca_abundancia
+    
   ),
   
   stringsAsFactors = FALSE
-)
-
-
-# ------------------------------------------------------------
-# 35. Calcular riqueza somente das identificações completas
-# ------------------------------------------------------------
-
-# As identificações incompletas e sem correspondência não
-# entram no cálculo da riqueza.
-
-matriz_apenas_completas <- matriz_final %>%
-  filter(
-    identificacao == "completa"
-  )
-
-riqueza_completas_por_inventario <- data.frame(
-  inventario = colunas_inventarios,
   
-  riqueza_identificacao_completa = colSums(
-    matriz_apenas_completas[
-      ,
-      colunas_inventarios,
-      drop = FALSE
-    ] > 0,
-    na.rm = TRUE
-  ),
-  
-  stringsAsFactors = FALSE
 )
 
 
-# ------------------------------------------------------------
-# 36. Resumo final
-# ------------------------------------------------------------
-
-numero_completas_originais <- sum(
-  matriz$identificacao_padronizada == "completa",
-  na.rm = TRUE
-)
-
-numero_incompletas_originais <- sum(
-  matriz$identificacao_padronizada == "incompleta",
-  na.rm = TRUE
-)
-
-numero_harmonizadas <- sum(
-  matriz_harmonizada$harmonizacao_realizada,
-  na.rm = TRUE
-)
-
-numero_sem_correspondencia <- sum(
-  matriz_harmonizada$identificacao ==
-    "sem_correspondencia",
-  na.rm = TRUE
-)
-
-numero_linhas_removidas <-
-  nrow(matriz) -
-  nrow(matriz_final)
-
-numero_completas_finais <- sum(
-  matriz_final$identificacao == "completa",
-  na.rm = TRUE
-)
-
-numero_incompletas_finais <- sum(
-  matriz_final$identificacao == "incompleta",
-  na.rm = TRUE
-)
-
-numero_sem_correspondencia_finais <- sum(
-  matriz_final$identificacao ==
-    "sem_correspondencia",
-  na.rm = TRUE
+cat(
+  "\n============================================\n"
 )
 
 cat(
-  "\n==========================================",
-  "\nRESUMO DA HARMONIZAÇÃO DA ABUNDÂNCIA",
-  "\n==========================================",
-  
-  "\nLinhas na matriz original:",
-  nrow(matriz),
-  
-  "\nIdentificações completas originais:",
-  numero_completas_originais,
-  
-  "\nIdentificações incompletas originais:",
-  numero_incompletas_originais,
-  
-  "\nLinhas completas harmonizadas:",
-  numero_harmonizadas,
-  
-  "\nCompletas sem correspondência:",
-  numero_sem_correspondencia,
-  
-  "\nLinhas com mudança de gênero:",
-  nrow(mudancas_genero),
-  
-  "\nLinhas com mudança de família:",
-  nrow(mudancas_familia),
-  
-  "\nGrupos completos consolidados:",
-  sum(
-    linhas_realmente_unidas$identificacao == "completa",
-    na.rm = TRUE
-  ),
-  
-  "\nGrupos sem correspondência consolidados:",
-  sum(
-    linhas_realmente_unidas$identificacao ==
-      "sem_correspondencia",
-    na.rm = TRUE
-  ),
-  
-  "\nIdentificações incompletas consolidadas:",
-  sum(
-    linhas_realmente_unidas$identificacao == "incompleta",
-    na.rm = TRUE
-  ),
-  
-  "\nTotal de grupos com linhas consolidadas:",
-  nrow(linhas_realmente_unidas),
-  
-  "\nLinhas removidas pela consolidação:",
-  numero_linhas_removidas,
-  
-  "\nLinhas na matriz final:",
-  nrow(matriz_final),
-  
-  "\nInventários na matriz final:",
-  length(colunas_inventarios),
-  
-  "\nIdentificações completas na matriz final:",
-  numero_completas_finais,
-  
-  "\nIdentificações incompletas na matriz final:",
-  numero_incompletas_finais,
-  
-  "\nSem correspondência na matriz final:",
-  numero_sem_correspondencia_finais,
-  
-  "\nIdentificações incompletas alteradas:",
-  nrow(incompletas_alteradas),
-  
-  "\nProblemas na conversão numérica:",
-  nrow(problemas_conversao),
-  
-  "\nValores negativos:",
-  nrow(valores_negativos),
-  
-  "\nDuplicações completas na matriz final:",
-  nrow(duplicacoes_completas_finais),
-  
-  "\nDuplicações sem correspondência na matriz final:",
-  nrow(duplicacoes_sem_correspondencia_finais),
-  
-  "\nNomes incompletos repetidos mantidos separadamente:",
-  nrow(duplicacoes_incompletas_finais),
-  
-  "\nAbundância total antes:",
-  abundancia_total_antes,
-  
-  "\nAbundância total depois:",
-  abundancia_total_depois,
-  
-  "\nDiferença na abundância total:",
-  diferenca_abundancia,
-  
-  "\n==========================================\n"
+  "RESUMO - A1 HARMONIZAÇÃO DA ABUNDÂNCIA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+print(
+  resumo
+)
+
+cat(
+  "============================================\n"
 )
 
 
-# ------------------------------------------------------------
-# 37. Criar resumo das categorias de identificação
-# ------------------------------------------------------------
-
-resumo_identificacao <- bind_rows(
-  matriz_harmonizada %>%
-    count(
-      identificacao,
-      name = "numero_linhas"
-    ) %>%
-    mutate(
-      etapa = "antes_da_consolidacao"
-    ),
-  
-  matriz_final %>%
-    count(
-      identificacao,
-      name = "numero_linhas"
-    ) %>%
-    mutate(
-      etapa = "depois_da_consolidacao"
-    )
-) %>%
-  select(
-    etapa,
-    identificacao,
-    numero_linhas
-  ) %>%
-  arrange(
-    etapa,
-    identificacao
-  )
-
-
-# ------------------------------------------------------------
-# 38. Salvar a matriz antes da consolidação
-# ------------------------------------------------------------
-
-write.xlsx(
-  matriz_harmonizada,
-  file.path(
-    pasta_resultados,
-    "abundancia_matriz_harmonizada_antes_da_consolidacao.xlsx"
-  ),
-  overwrite = TRUE
-)
-
-
-# ------------------------------------------------------------
-# 39. Salvar a matriz final em CSV
-# ------------------------------------------------------------
+# ============================================================
+# 30. SALVAR MATRIZ A1
+# ============================================================
 
 write.csv2(
-  matriz_final,
-  file.path(
-    pasta_resultados,
-    paste0(
-      "Matriz_original_abundancia_brasil_",
-      "identificacao_recorte1ha_",
-      "padronizacaobotanica.csv"
-    )
-  ),
+  
+  matriz_saida,
+  
+  arquivo_saida_csv,
+  
   row.names = FALSE,
+  
   fileEncoding = "latin1"
+  
 )
 
 
-# ------------------------------------------------------------
-# 40. Salvar a matriz final em XLSX
-# ------------------------------------------------------------
-
 write.xlsx(
-  matriz_final,
-  file.path(
-    pasta_resultados,
-    "Matriz_abundancia_brasil_padronizacao_botanica.xlsx"
-  ),
+  
+  matriz_saida,
+  
+  arquivo_saida_xlsx,
+  
   overwrite = TRUE
+  
 )
 
 
-# ------------------------------------------------------------
-# 41. Salvar abundância total por inventário
-# ------------------------------------------------------------
+# ============================================================
+# 31. SALVAR RELATÓRIO
+# ============================================================
 
 write.xlsx(
-  abundancia_total_por_inventario,
-  file.path(
-    pasta_resultados,
-    "abundancia_total_por_inventario.xlsx"
-  ),
-  overwrite = TRUE
-)
-
-
-# ------------------------------------------------------------
-# 42. Salvar riqueza das identificações completas
-# ------------------------------------------------------------
-
-write.xlsx(
-  riqueza_completas_por_inventario,
-  file.path(
-    pasta_resultados,
-    "riqueza_identificacoes_completas_por_inventario.xlsx"
-  ),
-  overwrite = TRUE
-)
-
-
-# ------------------------------------------------------------
-# 43. Salvar relatório geral
-# ------------------------------------------------------------
-
-write.xlsx(
+  
   list(
-    resumo_identificacao =
-      resumo_identificacao,
+    
+    resumo =
+      resumo,
+    
+    totais_por_inventario =
+      totais_inventarios,
+    
+    linhas_sem_especie =
+      linhas_sem_especie,
+    
+    completas_sem_correspondencia =
+      completas_sem_correspondencia,
     
     nomes_harmonizados =
       nomes_harmonizados,
@@ -1550,73 +1137,1088 @@ write.xlsx(
     nomes_alterados =
       nomes_alterados,
     
-    mudancas_genero =
-      mudancas_genero,
-    
-    mudancas_familia =
-      mudancas_familia,
-    
-    completas_sem_correspondencia =
-      completas_sem_correspondencia,
-    
-    grupos_consolidados =
-      linhas_realmente_unidas,
-    
-    resumo_consolidacao =
-      resumo_consolidacao,
-    
     conflitos_taxonomicos =
-      conflitos_taxonomicos,
+      conflitos_taxonomicos
     
-    problemas_conversao =
-      problemas_conversao,
-    
-    valores_negativos =
-      valores_negativos,
-    
-    duplicacoes_completas =
-      duplicacoes_completas_finais,
-    
-    duplicacoes_sem_correspondencia =
-      duplicacoes_sem_correspondencia_finais,
-    
-    incompletas_repetidas_mantidas =
-      duplicacoes_incompletas_finais,
-    
-    resumo_especies =
-      resumo_especies,
-    
-    abundancia_por_inventario =
-      abundancia_total_por_inventario,
-    
-    riqueza_completas =
-      riqueza_completas_por_inventario
   ),
   
-  file.path(
-    pasta_resultados,
-    "abundancia_relatorio_geral_harmonizacao.xlsx"
-  ),
+  arquivo_relatorio,
   
   overwrite = TRUE
+  
 )
 
 
-# ------------------------------------------------------------
-# 44. Mensagem final
-# ------------------------------------------------------------
+# ============================================================
+# 32. FINAL
+# ============================================================
 
 cat(
-  "\nArquivos salvos na pasta:\n",
-  pasta_resultados,
+  "\nA1 CONCLUÍDO.\n"
+)
+
+cat(
+  "\nMatriz harmonizada não consolidada:\n",
+  arquivo_saida_csv,
   "\n"
 )
 
 cat(
-  "\nMatriz final salva como:\n",
-  paste0(
-    "Matriz_original_abundancia_brasil_",
-    "identificacao_recorte1ha_",
-    "padronizacaobotanica.csv\n"
+  "\nRelatório:\n",
+  arquivo_relatorio,
+  "\n"
+)
+
+cat(
+  "\nIMPORTANTE:\n"
+)
+
+cat(
+  "Nenhuma identificação incompleta ou sem correspondência ",
+  "foi excluída.\n"
+)
+
+cat(
+  "O denominador de abundância relativa por inventário ",
+  "já foi registrado no relatório.\n"
+)
+# ============================================================
+# MATRIZ DE ABUNDÂNCIA
+# SCRIPT A2
+# CONSOLIDAR ESPÉCIES COM MESMO NOME BOTÂNICO
+#
+# REGRAS:
+#
+# 1. completa_com_correspondencia
+#    -> consolidar pelo nome aceito
+#    -> SOMAR abundâncias por inventário
+#
+# 2. completa_sem_correspondencia
+#    -> NÃO consolidar
+#
+# 3. incompleta
+#    -> NÃO consolidar
+#
+# 4. A abundância total deve ser integralmente preservada
+#
+# ============================================================
+
+
+# ============================================================
+# 0. PACOTES
+# ============================================================
+
+pacotes <- c(
+  "dplyr",
+  "stringr",
+  "openxlsx"
+)
+
+pacotes_faltantes <- pacotes[
+  !pacotes %in% rownames(installed.packages())
+]
+
+if (length(pacotes_faltantes) > 0) {
+  install.packages(pacotes_faltantes)
+}
+
+library(dplyr)
+library(stringr)
+library(openxlsx)
+
+
+# ============================================================
+# 1. CAMINHOS
+# ============================================================
+
+pasta_caapora <-
+  "C:/Users/giuli/OneDrive/Documentos/Caapora"
+
+
+pasta_harmonizacao <- file.path(
+  pasta_caapora,
+  "Matrizes_abundancia",
+  "harmonizacao_botanica"
+)
+
+
+arquivo_entrada <- file.path(
+  pasta_harmonizacao,
+  "Matriz_abundancia_harmonizada_nao_consolidada.csv"
+)
+
+
+arquivo_saida_csv <- file.path(
+  pasta_harmonizacao,
+  "Matriz_abundancia_harmonizada_consolidada.csv"
+)
+
+
+arquivo_saida_xlsx <- file.path(
+  pasta_harmonizacao,
+  "Matriz_abundancia_harmonizada_consolidada.xlsx"
+)
+
+
+arquivo_relatorio <- file.path(
+  pasta_harmonizacao,
+  "relatorio_A2_consolidacao_abundancia.xlsx"
+)
+
+
+# ============================================================
+# 2. CONFERIR ARQUIVO
+# ============================================================
+
+if (!file.exists(arquivo_entrada)) {
+  
+  stop(
+    paste0(
+      "Arquivo A1 não encontrado:\n",
+      arquivo_entrada
+    )
   )
+}
+
+
+# ============================================================
+# 3. LER MATRIZ A1
+# ============================================================
+
+matriz <- read.csv2(
+  arquivo_entrada,
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "latin1"
+)
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "A2 - CONSOLIDAÇÃO DA ABUNDÂNCIA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Linhas de entrada:",
+  nrow(matriz),
+  "\n"
+)
+
+
+# ============================================================
+# 4. CONFERIR COLUNAS OBRIGATÓRIAS
+# ============================================================
+
+colunas_obrigatorias <- c(
+  "especie_original",
+  "especie",
+  "identificacao",
+  "status_harmonizacao"
+)
+
+
+faltando <- setdiff(
+  colunas_obrigatorias,
+  names(matriz)
+)
+
+
+if (length(faltando) > 0) {
+  
+  stop(
+    paste0(
+      "Colunas obrigatórias ausentes:\n",
+      paste(
+        faltando,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ============================================================
+# 5. IDENTIFICAR INVENTÁRIOS
+# ============================================================
+
+colunas_inventarios <- grep(
+  "^t[0-9]+$",
+  names(matriz),
+  value = TRUE
+)
+
+
+if (length(colunas_inventarios) == 0) {
+  
+  stop(
+    "Nenhuma coluna de inventário foi encontrada."
+  )
+}
+
+
+cat(
+  "Número de inventários:",
+  length(colunas_inventarios),
+  "\n"
+)
+
+
+# ============================================================
+# 6. CONVERTER INVENTÁRIOS PARA NUMÉRICO
+# ============================================================
+
+matriz <- matriz %>%
+  
+  mutate(
+    
+    across(
+      
+      all_of(
+        colunas_inventarios
+      ),
+      
+      ~ suppressWarnings(
+        
+        as.numeric(
+          
+          str_replace(
+            as.character(.x),
+            ",",
+            "."
+          )
+          
+        )
+        
+      )
+      
+    )
+    
+  )
+
+
+# ============================================================
+# 7. ADICIONAR IDENTIFICADOR ÚNICO DE LINHA
+#
+# Importante para impedir que incompletas ou
+# sem correspondência sejam consolidadas.
+# ============================================================
+
+matriz <- matriz %>%
+  
+  mutate(
+    id_linha_original = row_number()
+  )
+
+
+# ============================================================
+# 8. ABUNDÂNCIA TOTAL ANTES DA CONSOLIDAÇÃO
+# ============================================================
+
+abundancia_total_antes <- sum(
+  
+  unlist(
+    matriz[
+      ,
+      colunas_inventarios,
+      drop = FALSE
+    ],
+    use.names = FALSE
+  ),
+  
+  na.rm = TRUE
+)
+
+
+cat(
+  "\nAbundância total antes da consolidação:",
+  abundancia_total_antes,
+  "\n"
+)
+
+
+# ============================================================
+# 9. TOTAIS POR INVENTÁRIO ANTES DA CONSOLIDAÇÃO
+# ============================================================
+
+totais_antes <- data.frame(
+  
+  inventario =
+    colunas_inventarios,
+  
+  abundancia_antes =
+    colSums(
+      matriz[
+        ,
+        colunas_inventarios,
+        drop = FALSE
+      ],
+      na.rm = TRUE
+    ),
+  
+  stringsAsFactors = FALSE
+)
+
+
+# ============================================================
+# 10. SEPARAR AS TRÊS CATEGORIAS
+# ============================================================
+
+completas_com_correspondencia <- matriz %>%
+  
+  filter(
+    status_harmonizacao ==
+      "completa_com_correspondencia"
+  )
+
+
+completas_sem_correspondencia <- matriz %>%
+  
+  filter(
+    status_harmonizacao ==
+      "completa_sem_correspondencia"
+  )
+
+
+incompletas <- matriz %>%
+  
+  filter(
+    status_harmonizacao ==
+      "incompleta"
+  )
+
+
+cat(
+  "\nCompletas com correspondência:",
+  nrow(completas_com_correspondencia),
+  "\n"
+)
+
+cat(
+  "Completas sem correspondência:",
+  nrow(completas_sem_correspondencia),
+  "\n"
+)
+
+cat(
+  "Incompletas:",
+  nrow(incompletas),
+  "\n"
+)
+
+
+# ============================================================
+# 11. IDENTIFICAR GRUPOS QUE SERÃO CONSOLIDADOS
+#
+# Somente completas com correspondência.
+# ============================================================
+
+grupos_consolidacao <- completas_com_correspondencia %>%
+  
+  group_by(
+    especie
+  ) %>%
+  
+  summarise(
+    
+    numero_linhas =
+      n(),
+    
+    nomes_originais =
+      paste(
+        sort(
+          unique(
+            especie_original
+          )
+        ),
+        collapse = " | "
+      ),
+    
+    ids_originais =
+      paste(
+        id_linha_original,
+        collapse = " | "
+      ),
+    
+    .groups = "drop"
+    
+  ) %>%
+  
+  arrange(
+    desc(numero_linhas),
+    especie
+  )
+
+
+grupos_realmente_consolidados <- grupos_consolidacao %>%
+  
+  filter(
+    numero_linhas > 1
+  )
+
+
+cat(
+  "\nGrupos com duas ou mais linhas:",
+  nrow(
+    grupos_realmente_consolidados
+  ),
+  "\n"
+)
+
+
+# ============================================================
+# 12. CONSOLIDAR COMPLETAS COM CORRESPONDÊNCIA
+#
+# Aqui SOMAMOS abundâncias.
+# ============================================================
+
+completas_consolidadas <- completas_com_correspondencia %>%
+  
+  group_by(
+    especie
+  ) %>%
+  
+  summarise(
+    
+    especie_original =
+      paste(
+        sort(
+          unique(
+            especie_original
+          )
+        ),
+        collapse = " | "
+      ),
+    
+    identificacao =
+      "completa",
+    
+    status_harmonizacao =
+      "completa_com_correspondencia",
+    
+    across(
+      
+      all_of(
+        colunas_inventarios
+      ),
+      
+      ~ sum(
+        .x,
+        na.rm = TRUE
+      )
+      
+    ),
+    
+    .groups = "drop"
+    
+  )
+
+
+# ============================================================
+# 13. PREPARAR COMPLETAS SEM CORRESPONDÊNCIA
+#
+# NÃO consolidar.
+# Cada linha continua independente.
+# ============================================================
+
+completas_sem_correspondencia_saida <-
+  completas_sem_correspondencia %>%
+  
+  select(
+    
+    especie_original,
+    
+    especie,
+    
+    identificacao,
+    
+    status_harmonizacao,
+    
+    all_of(
+      colunas_inventarios
+    )
+    
+  )
+
+
+# ============================================================
+# 14. PREPARAR INCOMPLETAS
+#
+# NÃO consolidar.
+#
+# Mesmo que duas linhas tenham exatamente o mesmo nome,
+# permanecem separadas.
+# ============================================================
+
+incompletas_saida <- incompletas %>%
+  
+  select(
+    
+    especie_original,
+    
+    especie,
+    
+    identificacao,
+    
+    status_harmonizacao,
+    
+    all_of(
+      colunas_inventarios
+    )
+    
+  )
+
+
+# ============================================================
+# 15. ORGANIZAR COMPLETAS CONSOLIDADAS
+# ============================================================
+
+completas_consolidadas <- completas_consolidadas %>%
+  
+  select(
+    
+    especie_original,
+    
+    especie,
+    
+    identificacao,
+    
+    status_harmonizacao,
+    
+    all_of(
+      colunas_inventarios
+    )
+    
+  )
+
+
+# ============================================================
+# 16. REUNIR AS TRÊS PARTES
+# ============================================================
+
+matriz_consolidada <- bind_rows(
+  
+  completas_consolidadas,
+  
+  completas_sem_correspondencia_saida,
+  
+  incompletas_saida
+  
+)
+
+
+# ============================================================
+# 17. ABUNDÂNCIA TOTAL DEPOIS DA CONSOLIDAÇÃO
+# ============================================================
+
+abundancia_total_depois <- sum(
+  
+  unlist(
+    matriz_consolidada[
+      ,
+      colunas_inventarios,
+      drop = FALSE
+    ],
+    use.names = FALSE
+  ),
+  
+  na.rm = TRUE
+)
+
+
+diferenca_abundancia <-
+  abundancia_total_depois -
+  abundancia_total_antes
+
+
+cat(
+  "\nAbundância total depois da consolidação:",
+  abundancia_total_depois,
+  "\n"
+)
+
+cat(
+  "Diferença:",
+  diferenca_abundancia,
+  "\n"
+)
+
+
+if (
+  abs(
+    diferenca_abundancia
+  ) > 1e-8
+) {
+  
+  stop(
+    paste0(
+      "ERRO: a abundância total mudou!\n",
+      "Antes = ",
+      abundancia_total_antes,
+      "\nDepois = ",
+      abundancia_total_depois
+    )
+  )
+}
+
+
+# ============================================================
+# 18. TOTAIS POR INVENTÁRIO DEPOIS
+# ============================================================
+
+totais_depois <- data.frame(
+  
+  inventario =
+    colunas_inventarios,
+  
+  abundancia_depois =
+    colSums(
+      matriz_consolidada[
+        ,
+        colunas_inventarios,
+        drop = FALSE
+      ],
+      na.rm = TRUE
+    ),
+  
+  stringsAsFactors = FALSE
+)
+
+
+# ============================================================
+# 19. COMPARAR TOTAIS POR INVENTÁRIO
+# ============================================================
+
+comparacao_totais <- totais_antes %>%
+  
+  left_join(
+    totais_depois,
+    by = "inventario"
+  ) %>%
+  
+  mutate(
+    
+    diferenca =
+      abundancia_depois -
+      abundancia_antes,
+    
+    preservado =
+      abs(
+        diferenca
+      ) < 1e-8
+    
+  )
+
+
+inventarios_com_diferenca <- comparacao_totais %>%
+  
+  filter(
+    !preservado
+  )
+
+
+cat(
+  "Inventários com alteração da abundância total:",
+  nrow(
+    inventarios_com_diferenca
+  ),
+  "\n"
+)
+
+
+if (
+  nrow(
+    inventarios_com_diferenca
+  ) > 0
+) {
+  
+  stop(
+    "A abundância não foi preservada em todos os inventários."
+  )
+}
+
+
+# ============================================================
+# 20. CONFERIR SE COMPLETAS FORAM CONSOLIDADAS
+# ============================================================
+
+duplicacoes_completas <- matriz_consolidada %>%
+  
+  filter(
+    status_harmonizacao ==
+      "completa_com_correspondencia"
+  ) %>%
+  
+  count(
+    especie,
+    name = "numero_linhas"
+  ) %>%
+  
+  filter(
+    numero_linhas > 1
+  )
+
+
+if (
+  nrow(
+    duplicacoes_completas
+  ) > 0
+) {
+  
+  stop(
+    paste0(
+      "Ainda existem espécies completas com correspondência ",
+      "duplicadas após a consolidação."
+    )
+  )
+}
+
+
+# ============================================================
+# 21. CONFERIR INCOMPLETAS REPETIDAS
+#
+# Isso NÃO é erro.
+#
+# Serve apenas para documentar quantos nomes incompletos
+# continuam repetidos intencionalmente.
+# ============================================================
+
+incompletas_repetidas <- matriz_consolidada %>%
+  
+  filter(
+    status_harmonizacao ==
+      "incompleta"
+  ) %>%
+  
+  count(
+    especie,
+    name =
+      "numero_linhas"
+  ) %>%
+  
+  filter(
+    numero_linhas > 1
+  ) %>%
+  
+  arrange(
+    desc(
+      numero_linhas
+    ),
+    especie
+  )
+
+
+cat(
+  "Nomes incompletos repetidos mantidos separadamente:",
+  nrow(
+    incompletas_repetidas
+  ),
+  "\n"
+)
+
+
+# ============================================================
+# 22. NÚMERO DE LINHAS REMOVIDAS PELA CONSOLIDAÇÃO
+# ============================================================
+
+linhas_antes <-
+  nrow(
+    matriz
+  )
+
+
+linhas_depois <-
+  nrow(
+    matriz_consolidada
+  )
+
+
+linhas_removidas <-
+  linhas_antes -
+  linhas_depois
+
+
+cat(
+  "\nLinhas antes:",
+  linhas_antes,
+  "\n"
+)
+
+cat(
+  "Linhas depois:",
+  linhas_depois,
+  "\n"
+)
+
+cat(
+  "Linhas removidas pela consolidação:",
+  linhas_removidas,
+  "\n"
+)
+
+
+# ============================================================
+# 23. CONTAGENS FINAIS POR STATUS
+# ============================================================
+
+contagem_status_final <- matriz_consolidada %>%
+  
+  count(
+    status_harmonizacao,
+    sort = TRUE
+  )
+
+
+cat(
+  "\nStatus finais:\n"
+)
+
+print(
+  contagem_status_final
+)
+
+
+# ============================================================
+# 24. RESUMO FINAL
+# ============================================================
+
+resumo <- data.frame(
+  
+  Indicador = c(
+    
+    "Linhas antes da consolidação",
+    
+    "Completas com correspondência antes da consolidação",
+    
+    "Completas sem correspondência",
+    
+    "Identificações incompletas",
+    
+    "Grupos de completas realmente consolidados",
+    
+    "Linhas removidas pela consolidação",
+    
+    "Linhas depois da consolidação",
+    
+    "Completas com correspondência após consolidação",
+    
+    "Completas sem correspondência após consolidação",
+    
+    "Incompletas após consolidação",
+    
+    "Nomes incompletos repetidos mantidos separadamente",
+    
+    "Abundância total antes",
+    
+    "Abundância total depois",
+    
+    "Diferença na abundância",
+    
+    "Inventários com alteração no total",
+    
+    "Número de inventários"
+    
+  ),
+  
+  Quantidade = c(
+    
+    linhas_antes,
+    
+    nrow(
+      completas_com_correspondencia
+    ),
+    
+    nrow(
+      completas_sem_correspondencia
+    ),
+    
+    nrow(
+      incompletas
+    ),
+    
+    nrow(
+      grupos_realmente_consolidados
+    ),
+    
+    linhas_removidas,
+    
+    linhas_depois,
+    
+    sum(
+      matriz_consolidada$
+        status_harmonizacao ==
+        "completa_com_correspondencia"
+    ),
+    
+    sum(
+      matriz_consolidada$
+        status_harmonizacao ==
+        "completa_sem_correspondencia"
+    ),
+    
+    sum(
+      matriz_consolidada$
+        status_harmonizacao ==
+        "incompleta"
+    ),
+    
+    nrow(
+      incompletas_repetidas
+    ),
+    
+    abundancia_total_antes,
+    
+    abundancia_total_depois,
+    
+    diferenca_abundancia,
+    
+    nrow(
+      inventarios_com_diferenca
+    ),
+    
+    length(
+      colunas_inventarios
+    )
+    
+  ),
+  
+  stringsAsFactors = FALSE
+)
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "RESUMO - A2 CONSOLIDAÇÃO DA ABUNDÂNCIA\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+print(
+  resumo
+)
+
+cat(
+  "============================================\n"
+)
+
+
+# ============================================================
+# 25. SALVAR MATRIZ CONSOLIDADA
+# ============================================================
+
+write.csv2(
+  
+  matriz_consolidada,
+  
+  arquivo_saida_csv,
+  
+  row.names = FALSE,
+  
+  fileEncoding =
+    "latin1"
+  
+)
+
+
+write.xlsx(
+  
+  matriz_consolidada,
+  
+  arquivo_saida_xlsx,
+  
+  overwrite = TRUE
+  
+)
+
+
+# ============================================================
+# 26. SALVAR RELATÓRIO
+# ============================================================
+
+write.xlsx(
+  
+  list(
+    
+    resumo =
+      resumo,
+    
+    status_final =
+      contagem_status_final,
+    
+    grupos_consolidados =
+      grupos_realmente_consolidados,
+    
+    incompletas_repetidas =
+      incompletas_repetidas,
+    
+    totais_por_inventario =
+      comparacao_totais,
+    
+    inventarios_com_diferenca =
+      inventarios_com_diferenca,
+    
+    duplicacoes_completas =
+      duplicacoes_completas
+    
+  ),
+  
+  arquivo_relatorio,
+  
+  overwrite = TRUE
+  
+)
+
+
+# ============================================================
+# 27. FINAL
+# ============================================================
+
+cat(
+  "\nA2 CONCLUÍDO.\n"
+)
+
+cat(
+  "\nMatriz consolidada:\n",
+  arquivo_saida_csv,
+  "\n"
+)
+
+cat(
+  "\nRelatório:\n",
+  arquivo_relatorio,
+  "\n"
+)
+
+cat(
+  "\nIMPORTANTE:\n"
+)
+
+cat(
+  "- completas com correspondência foram consolidadas por SOMA\n"
+)
+
+cat(
+  "- completas sem correspondência permaneceram separadas\n"
+)
+
+cat(
+  "- incompletas permaneceram separadas\n"
+)
+
+cat(
+  "- abundância total preservada =",
+  abundancia_total_depois,
+  "\n"
 )
