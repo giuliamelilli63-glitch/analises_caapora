@@ -1,0 +1,757 @@
+# ============================================================
+# MATRIZ DE ABUNDÂNCIA RELATIVA - VERSÃO FINAL
+# ============================================================
+
+
+# ============================================================
+# 1. PACOTES
+# ============================================================
+
+library(dplyr)
+library(openxlsx)
+library(stringr)
+
+
+# ============================================================
+# 2. DIRETÓRIO DE TRABALHO
+# ============================================================
+
+pasta <- paste0(
+  "C:/Users/giuli/OneDrive/Documentos/Caapora/",
+  "Matrizes_abundancia/harmonizacao_botanica"
+)
+
+
+# ============================================================
+# 3. ARQUIVO DE ENTRADA
+# ============================================================
+
+arquivo_entrada <- file.path(
+  pasta,
+  "Matriz_abundancia_harmonizada_nao_consolidada.xlsx"
+)
+
+
+# ============================================================
+# 4. LEITURA DA MATRIZ
+# ============================================================
+
+matriz <- read.xlsx(
+  arquivo_entrada,
+  check.names = FALSE
+)
+
+
+# ============================================================
+# 5. IDENTIFICAR COLUNAS DOS INVENTÁRIOS
+# ============================================================
+
+colunas_inventarios <- grep(
+  "^t[0-9]+$",
+  names(matriz),
+  value = TRUE
+)
+
+cat("\n========================================\n")
+cat("DIAGNÓSTICO INICIAL\n")
+cat("========================================\n")
+
+cat("Linhas:", nrow(matriz), "\n")
+cat("Colunas:", ncol(matriz), "\n")
+cat("Inventários:", length(colunas_inventarios), "\n")
+
+
+# ============================================================
+# 6. EXCLUIR INVENTÁRIO PROBLEMÁTICO t897
+# ============================================================
+
+if ("t897" %in% names(matriz)) {
+  
+  matriz <- matriz %>%
+    select(-t897)
+  
+  colunas_inventarios <- setdiff(
+    colunas_inventarios,
+    "t897"
+  )
+  
+  cat("\nt897 excluído.\n")
+  
+}
+
+cat(
+  "Inventários restantes:",
+  length(colunas_inventarios),
+  "\n"
+)
+
+
+# ============================================================
+# 7. IDENTIFICAR REGISTROS SEM CORRESPONDÊNCIA
+# ============================================================
+
+sem_correspondencia <- matriz %>%
+  filter(
+    status_harmonizacao ==
+      "completa_sem_correspondencia"
+  )
+
+cat("\n========================================\n")
+cat("SEM CORRESPONDÊNCIA TAXONÔMICA\n")
+cat("========================================\n")
+
+cat(
+  "Registros excluídos:",
+  nrow(sem_correspondencia),
+  "\n"
+)
+
+
+# ============================================================
+# 8. ESPÉCIES COMPLETAS VÁLIDAS
+# ============================================================
+
+completas_validas <- matriz %>%
+  filter(
+    identificacao == "completa",
+    status_harmonizacao ==
+      "completa_com_correspondencia"
+  )
+
+
+cat("\n========================================\n")
+cat("ESPÉCIES COMPLETAS VÁLIDAS\n")
+cat("========================================\n")
+
+cat(
+  "Linhas completas válidas:",
+  nrow(completas_validas),
+  "\n"
+)
+
+
+# ============================================================
+# 9. PADRONIZAR NOME FINAL DAS COMPLETAS
+# ============================================================
+#
+# Exemplo:
+# Myrcia splendens
+# ->
+# myrcia_splendens
+#
+# ============================================================
+
+completas_validas <- completas_validas %>%
+  mutate(
+    especie_final = especie %>%
+      str_trim() %>%
+      str_to_lower() %>%
+      str_replace_all("\\s+", "_")
+  )
+
+
+# ============================================================
+# 10. CONSOLIDAR SOMENTE AS COMPLETAS
+# ============================================================
+#
+# Espécies completas que convergiram para o mesmo
+# nome aceito serão somadas.
+#
+# ============================================================
+
+completas_consolidadas <- completas_validas %>%
+  group_by(
+    especie_final
+  ) %>%
+  summarise(
+    
+    especie_original = paste(
+      sort(
+        unique(especie_original)
+      ),
+      collapse = "; "
+    ),
+    
+    identificacao = "completa",
+    
+    across(
+      all_of(colunas_inventarios),
+      ~ sum(
+        as.numeric(.x),
+        na.rm = TRUE
+      )
+    ),
+    
+    .groups = "drop"
+  )
+
+
+cat("\n========================================\n")
+cat("CONSOLIDAÇÃO DAS COMPLETAS\n")
+cat("========================================\n")
+
+cat(
+  "Linhas completas antes:",
+  nrow(completas_validas),
+  "\n"
+)
+
+cat(
+  "Espécies completas depois:",
+  nrow(completas_consolidadas),
+  "\n"
+)
+
+cat(
+  "Linhas absorvidas:",
+  nrow(completas_validas) -
+    nrow(completas_consolidadas),
+  "\n"
+)
+
+
+# ============================================================
+# 11. IDENTIFICAÇÕES INCOMPLETAS
+# ============================================================
+#
+# IMPORTANTE:
+# estas linhas NÃO serão consolidadas.
+#
+# especie_final será igual a especie_original.
+#
+# ============================================================
+
+incompletas_final <- matriz %>%
+  filter(
+    identificacao == "incompleta",
+    status_harmonizacao == "incompleta"
+  ) %>%
+  mutate(
+    especie_final = especie_original
+  ) %>%
+  select(
+    especie_final,
+    especie_original,
+    identificacao,
+    all_of(colunas_inventarios)
+  )
+
+
+cat("\n========================================\n")
+cat("IDENTIFICAÇÕES INCOMPLETAS\n")
+cat("========================================\n")
+
+cat(
+  "Linhas incompletas mantidas:",
+  nrow(incompletas_final),
+  "\n"
+)
+
+
+# ============================================================
+# 12. CONFERIR REPETIÇÃO DAS INCOMPLETAS
+# ============================================================
+
+incompletas_repetidas <- incompletas_final %>%
+  count(
+    especie_final,
+    sort = TRUE
+  ) %>%
+  filter(n > 1)
+
+cat(
+  "Nomes incompletos repetidos:",
+  nrow(incompletas_repetidas),
+  "\n"
+)
+
+# Isso é esperado e NÃO é erro.
+
+
+# ============================================================
+# 13. PREPARAR COMPLETAS PARA JUNÇÃO
+# ============================================================
+
+completas_para_juncao <- completas_consolidadas %>%
+  select(
+    especie_final,
+    especie_original,
+    identificacao,
+    all_of(colunas_inventarios)
+  )
+
+
+# ============================================================
+# 14. UNIR COMPLETAS + INCOMPLETAS
+# ============================================================
+
+matriz_abundancia_consolidada <- bind_rows(
+  completas_para_juncao,
+  incompletas_final
+)
+
+
+cat("\n========================================\n")
+cat("MATRIZ CONSOLIDADA\n")
+cat("========================================\n")
+
+cat(
+  "Espécies completas:",
+  sum(
+    matriz_abundancia_consolidada$
+      identificacao == "completa"
+  ),
+  "\n"
+)
+
+cat(
+  "Registros incompletos:",
+  sum(
+    matriz_abundancia_consolidada$
+      identificacao == "incompleta"
+  ),
+  "\n"
+)
+
+cat(
+  "Total de linhas:",
+  nrow(matriz_abundancia_consolidada),
+  "\n"
+)
+
+
+# ============================================================
+# 15. CHECAR DUPLICAÇÃO ENTRE AS COMPLETAS
+# ============================================================
+#
+# As completas devem estar totalmente consolidadas.
+#
+# As incompletas podem repetir.
+#
+# ============================================================
+
+duplicadas_completas <- matriz_abundancia_consolidada %>%
+  filter(
+    identificacao == "completa"
+  ) %>%
+  count(
+    especie_final
+  ) %>%
+  filter(
+    n > 1
+  )
+
+
+cat("\n========================================\n")
+cat("CHECAGEM DAS COMPLETAS\n")
+cat("========================================\n")
+
+cat(
+  "Espécies completas ainda duplicadas:",
+  nrow(duplicadas_completas),
+  "\n"
+)
+
+if (
+  nrow(duplicadas_completas) > 0
+) {
+  
+  stop(
+    "ERRO: ainda existem espécies completas duplicadas."
+  )
+}
+
+
+# ============================================================
+# 16. CHECAR PRESERVAÇÃO DOS TOTAIS
+# ============================================================
+#
+# Compara:
+#
+# matriz original
+# excluindo sem correspondência
+#
+# versus
+#
+# matriz após consolidação
+#
+# ============================================================
+
+matriz_pre_consolidacao <- matriz %>%
+  filter(
+    status_harmonizacao !=
+      "completa_sem_correspondencia"
+  )
+
+
+totais_pre_consolidacao <- colSums(
+  matriz_pre_consolidacao[
+    colunas_inventarios
+  ],
+  na.rm = TRUE
+)
+
+
+totais_pos_consolidacao <- colSums(
+  matriz_abundancia_consolidada[
+    colunas_inventarios
+  ],
+  na.rm = TRUE
+)
+
+
+diferencas_totais <-
+  totais_pre_consolidacao -
+  totais_pos_consolidacao
+
+
+cat("\n========================================\n")
+cat("PRESERVAÇÃO DOS TOTAIS\n")
+cat("========================================\n")
+
+cat(
+  "Maior diferença absoluta:",
+  max(
+    abs(diferencas_totais)
+  ),
+  "\n"
+)
+
+cat(
+  "Inventários com diferença:",
+  sum(
+    abs(diferencas_totais) > 1e-10
+  ),
+  "\n"
+)
+
+
+if (
+  any(
+    abs(diferencas_totais) > 1e-10
+  )
+) {
+  
+  stop(
+    "ERRO: a consolidação alterou o total de indivíduos."
+  )
+}
+
+
+# ============================================================
+# 17. CALCULAR TOTAL DE INDIVÍDUOS POR INVENTÁRIO
+# ============================================================
+#
+# Aqui entram:
+#
+# completas válidas
+# +
+# incompletas
+#
+# Não entram:
+#
+# sem correspondência taxonômica
+#
+# ============================================================
+
+totais_inventarios <- colSums(
+  matriz_abundancia_consolidada[
+    colunas_inventarios
+  ],
+  na.rm = TRUE
+)
+
+
+# ============================================================
+# 18. CHECAR INVENTÁRIOS COM TOTAL ZERO
+# ============================================================
+
+inventarios_zero <- names(
+  totais_inventarios[
+    totais_inventarios == 0
+  ]
+)
+
+
+cat("\n========================================\n")
+cat("INVENTÁRIOS COM TOTAL ZERO\n")
+cat("========================================\n")
+
+cat(
+  "Número:",
+  length(inventarios_zero),
+  "\n"
+)
+
+
+if (
+  length(inventarios_zero) > 0
+) {
+  
+  print(
+    inventarios_zero
+  )
+  
+  stop(
+    "ERRO: existem inventários com total zero."
+  )
+}
+
+
+# ============================================================
+# 19. CALCULAR ABUNDÂNCIA RELATIVA
+# ============================================================
+
+matriz_abundancia_relativa <-
+  matriz_abundancia_consolidada
+
+
+matriz_abundancia_relativa[
+  colunas_inventarios
+] <- sweep(
+  
+  matriz_abundancia_consolidada[
+    colunas_inventarios
+  ],
+  
+  MARGIN = 2,
+  
+  STATS = totais_inventarios,
+  
+  FUN = "/"
+)
+
+
+# ============================================================
+# 20. CONFERIR SOMA DAS ABUNDÂNCIAS RELATIVAS
+# ============================================================
+
+somas_relativas <- colSums(
+  matriz_abundancia_relativa[
+    colunas_inventarios
+  ],
+  na.rm = TRUE
+)
+
+
+cat("\n========================================\n")
+cat("CONFERÊNCIA DAS ABUNDÂNCIAS RELATIVAS\n")
+cat("========================================\n")
+
+cat(
+  "Menor soma:",
+  min(somas_relativas),
+  "\n"
+)
+
+cat(
+  "Maior soma:",
+  max(somas_relativas),
+  "\n"
+)
+
+cat(
+  "Inventários com soma diferente de 1:",
+  sum(
+    abs(
+      somas_relativas - 1
+    ) > 1e-10
+  ),
+  "\n"
+)
+
+
+if (
+  any(
+    abs(
+      somas_relativas - 1
+    ) > 1e-10
+  )
+) {
+  
+  stop(
+    "ERRO: existem inventários cuja abundância relativa não soma 1."
+  )
+}
+
+
+# ============================================================
+# 21. ORGANIZAR ORDEM DAS COLUNAS
+# ============================================================
+
+matriz_abundancia_relativa <-
+  matriz_abundancia_relativa %>%
+  select(
+    especie_original,
+    especie_final,
+    identificacao,
+    all_of(colunas_inventarios)
+  )
+
+
+# ============================================================
+# 22. RESUMO FINAL
+# ============================================================
+
+cat("\n\n")
+cat("========================================\n")
+cat("RESUMO FINAL\n")
+cat("========================================\n")
+
+cat(
+  "Inventários:",
+  length(colunas_inventarios),
+  "\n"
+)
+
+cat(
+  "Espécies completas:",
+  sum(
+    matriz_abundancia_relativa$
+      identificacao == "completa"
+  ),
+  "\n"
+)
+
+cat(
+  "Registros incompletos:",
+  sum(
+    matriz_abundancia_relativa$
+      identificacao == "incompleta"
+  ),
+  "\n"
+)
+
+cat(
+  "Total de linhas:",
+  nrow(matriz_abundancia_relativa),
+  "\n"
+)
+
+cat(
+  "Sem correspondência excluídas:",
+  nrow(sem_correspondencia),
+  "\n"
+)
+
+cat(
+  "Maior diferença antes/depois da consolidação:",
+  max(
+    abs(diferencas_totais)
+  ),
+  "\n"
+)
+
+cat(
+  "Inventários com soma relativa diferente de 1:",
+  sum(
+    abs(
+      somas_relativas - 1
+    ) > 1e-10
+  ),
+  "\n"
+)
+
+
+# ============================================================
+# 23. TABELA DE AUDITORIA DOS INVENTÁRIOS
+# ============================================================
+
+auditoria_inventarios <- data.frame(
+  
+  inventario =
+    colunas_inventarios,
+  
+  total_individuos =
+    as.numeric(
+      totais_inventarios
+    ),
+  
+  soma_abundancia_relativa =
+    as.numeric(
+      somas_relativas
+    )
+)
+
+
+# ============================================================
+# 24. TABELA DOS REGISTROS EXCLUÍDOS
+# ============================================================
+
+registros_excluidos <-
+  sem_correspondencia %>%
+  select(
+    especie_original,
+    especie,
+    identificacao,
+    status_harmonizacao
+  )
+
+
+# ============================================================
+# 25. EXPORTAR MATRIZ FINAL
+# ============================================================
+
+arquivo_saida <- file.path(
+  pasta,
+  "Matriz_abundancia_relativa_final.xlsx"
+)
+
+
+write.xlsx(
+  matriz_abundancia_relativa,
+  arquivo_saida,
+  overwrite = TRUE
+)
+
+
+# ============================================================
+# 26. EXPORTAR AUDITORIA
+# ============================================================
+
+arquivo_auditoria <- file.path(
+  pasta,
+  "Auditoria_abundancia_relativa.xlsx"
+)
+
+
+write.xlsx(
+  
+  list(
+    
+    totais_inventarios =
+      auditoria_inventarios,
+    
+    registros_excluidos =
+      registros_excluidos,
+    
+    incompletas_repetidas =
+      incompletas_repetidas
+    
+  ),
+  
+  arquivo_auditoria,
+  overwrite = TRUE
+)
+
+
+# ============================================================
+# 27. FINAL
+# ============================================================
+
+cat("\n========================================\n")
+cat("PROCESSAMENTO CONCLUÍDO\n")
+cat("========================================\n")
+
+cat(
+  "\nMatriz final:\n",
+  arquivo_saida,
+  "\n"
+)
+
+cat(
+  "\nAuditoria:\n",
+  arquivo_auditoria,
+  "\n"
+)
+
