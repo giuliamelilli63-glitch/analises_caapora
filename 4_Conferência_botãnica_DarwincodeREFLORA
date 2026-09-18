@@ -1,158 +1,563 @@
 # ============================================================
-# CONFERÊNCIA DE NOMES BOTÂNICOS COM O REFLORA
-# Arquivo Darwin Core: taxon.txt
+# CONFERÊNCIA + ENRIQUECIMENTO TAXONÔMICO - REFLORA
+# VERSÃO CONSOLIDADA ATUALIZADA
+#
+# CATEGORIAS DE IDENTIFICAÇÃO:
+#
+# completa
+# incompleta
+# indeterminada
+#
+# ============================================================
+#
+# IDENTIFICAÇÕES COMPLETAS
+#
+# - usa nome_corrigido quando preenchido
+# - caso contrário usa especie
+# - somente correspondência EXATA
+# - NÃO faz fuzzy matching
+# - recupera:
+#     nome encontrado
+#     nome aceito
+#     status taxonômico
+#     sinônimo
+#     família
+#     gênero
+#     nível taxonômico
+#     autoria
+#     LifeForm
+#     NATIVA
+#     NATURALIZADA
+#     CULTIVADA
+#     endemismo
+#     domínio fitogeográfico
+#     estados
+#
+# ============================================================
+#
+# IDENTIFICAÇÕES INCOMPLETAS
+#
+# - nome_corrigido contém o gênero já separado/corrigido
+#   manualmente
+#
+# Ex.:
+# diplotropis_sp -> diplotropis
+# guadua_sp      -> guadua
+#
+# - valida o gênero pela coluna genus do taxon.txt
+# - NÃO tenta descobrir espécie
+# - NÃO faz fuzzy matching
+# - NÃO atribui LifeForm/origem no nível de gênero
+#
+# ============================================================
+#
+# IDENTIFICAÇÕES INDETERMINADAS
+#
+# - ficam separadas das incompletas
+# - NÃO tenta validar gênero
+# - NÃO tenta identificar espécie
+# - NÃO atribui informações taxonômicas
+#
 # ============================================================
 
 
 # ============================================================
-# 1. INSTALAR E CARREGAR OS PACOTES
+# 0. PACOTES
 # ============================================================
 
-pacotes <- c("readxl", "writexl")
+pacotes <- c(
+  "readxl",
+  "dplyr",
+  "stringr",
+  "jsonlite",
+  "openxlsx"
+)
 
-for (p in pacotes) {
-  if (!requireNamespace(p, quietly = TRUE)) {
-    install.packages(p)
-  }
+pacotes_faltantes <- pacotes[
+  !pacotes %in% rownames(installed.packages())
+]
+
+if (length(pacotes_faltantes) > 0) {
+  install.packages(pacotes_faltantes)
 }
 
 library(readxl)
-library(writexl)
+library(dplyr)
+library(stringr)
+library(jsonlite)
+library(openxlsx)
 
 
 # ============================================================
-# 2. DEFINIR A PASTA E OS ARQUIVOS
+# 1. CAMINHOS
 # ============================================================
 
-pasta <- paste0(
-  "C:/Users/giuli/OneDrive/Documentos/",
-  "Caapora/nomes_botanicos"
+pasta_caapora <-
+  "C:/Users/giuli/OneDrive/Documentos/Caapora"
+
+pasta_taxonomia <- file.path(
+  pasta_caapora,
+  "taxonomia"
+)
+
+pasta_reflora <- file.path(
+  pasta_caapora,
+  "nomes_botanicos",
+  "dwca-lista_especies_flora_brasil-v393.428"
+)
+
+arquivo_especies <- file.path(
+  pasta_taxonomia,
+  "conferencia1.xlsx"
 )
 
 arquivo_taxon <- file.path(
-  pasta,
-  "dwca-lista_especies_flora_brasil-v393.428",
+  pasta_reflora,
   "taxon.txt"
 )
 
-# O script procura automaticamente:
-# especies.xlsx, especies.xls, especies.csv ou especies.txt
-
-possiveis_arquivos_especies <- c(
-  file.path(pasta, "especies.xlsx"),
-  file.path(pasta, "especies.xls"),
-  file.path(pasta, "especies.csv"),
-  file.path(pasta, "especies.txt")
+arquivo_speciesprofile <- file.path(
+  pasta_reflora,
+  "speciesprofile.txt"
 )
 
-arquivo_especies <- possiveis_arquivos_especies[
-  file.exists(possiveis_arquivos_especies)
-][1]
+arquivo_distribution <- file.path(
+  pasta_reflora,
+  "distribution.txt"
+)
 
-if (is.na(arquivo_especies)) {
-  stop(
-    paste0(
-      "O arquivo 'especies' não foi encontrado na pasta:\n",
-      pasta,
-      "\n\nUse um destes nomes:\n",
-      "especies.xlsx\n",
-      "especies.xls\n",
-      "especies.csv\n",
-      "especies.txt"
-    )
-  )
-}
+arquivo_saida <- file.path(
+  pasta_taxonomia,
+  "conferencia2.xlsx"
+)
 
-if (!file.exists(arquivo_taxon)) {
+
+# ============================================================
+# 2. CONFERIR ARQUIVOS
+# ============================================================
+
+arquivos_necessarios <- c(
+  arquivo_especies,
+  arquivo_taxon,
+  arquivo_speciesprofile,
+  arquivo_distribution
+)
+
+if (any(!file.exists(arquivos_necessarios))) {
+  
   stop(
-    paste0(
-      "O arquivo taxon.txt não foi encontrado em:\n",
-      arquivo_taxon
+    paste(
+      "Arquivos não encontrados:",
+      paste(
+        arquivos_necessarios[
+          !file.exists(arquivos_necessarios)
+        ],
+        collapse = "\n"
+      ),
+      sep = "\n"
     )
   )
 }
 
 
 # ============================================================
-# 3. LER A TABELA DE ESPÉCIES
+# 3. FUNÇÕES AUXILIARES
 # ============================================================
 
-extensao <- tolower(
-  tools::file_ext(arquivo_especies)
-)
 
-if (extensao %in% c("xlsx", "xls")) {
+# ------------------------------------------------------------
+# Normalizar nome APENAS para comparação
+# ------------------------------------------------------------
+
+normalizar_nome <- function(x) {
   
-  especies <- read_excel(
-    arquivo_especies
+  x <- as.character(x)
+  
+  x <- iconv(
+    x,
+    from = "",
+    to = "ASCII//TRANSLIT",
+    sub = ""
   )
   
-  especies <- as.data.frame(
-    especies,
-    stringsAsFactors = FALSE,
-    check.names = FALSE
+  x <- tolower(x)
+  
+  x <- gsub(
+    "_",
+    " ",
+    x,
+    fixed = TRUE
   )
   
-} else {
+  x <- gsub(
+    "\u00A0",
+    " ",
+    x,
+    fixed = TRUE
+  )
   
-  # Primeiro tenta arquivo separado por ponto e vírgula
-  especies <- tryCatch(
-    read.csv2(
-      arquivo_especies,
-      header = TRUE,
-      stringsAsFactors = FALSE,
-      check.names = FALSE,
-      fileEncoding = "UTF-8"
-    ),
+  x <- gsub(
+    "[[:space:]]+",
+    " ",
+    x
+  )
+  
+  x <- trimws(x)
+  
+  x[
+    is.na(x) |
+      x == ""
+  ] <- NA_character_
+  
+  x
+}
+
+
+# ------------------------------------------------------------
+# Extrair informação de JSON
+# ------------------------------------------------------------
+
+extrair_json <- function(x, campo) {
+  
+  if (
+    is.na(x) ||
+      trimws(x) == ""
+  ) {
+    return(NA_character_)
+  }
+  
+  obj <- tryCatch(
+    jsonlite::fromJSON(x),
     error = function(e) NULL
   )
   
-  # Caso só tenha uma coluna, tenta tabulação
-  if (is.null(especies) || ncol(especies) == 1) {
-    
-    especies <- read.delim(
-      arquivo_especies,
-      header = TRUE,
-      stringsAsFactors = FALSE,
-      check.names = FALSE,
-      fileEncoding = "UTF-8",
-      sep = "\t",
-      quote = "",
-      comment.char = ""
-    )
+  if (
+    is.null(obj) ||
+      is.null(obj[[campo]])
+  ) {
+    return(NA_character_)
   }
+  
+  valores <- unique(
+    as.character(
+      obj[[campo]]
+    )
+  )
+  
+  valores <- valores[
+    !is.na(valores) &
+      trimws(valores) != ""
+  ]
+  
+  if (length(valores) == 0) {
+    return(NA_character_)
+  }
+  
+  paste(
+    valores,
+    collapse = "; "
+  )
+}
+
+
+# ------------------------------------------------------------
+# Juntar valores únicos
+# ------------------------------------------------------------
+
+juntar_unicos <- function(x) {
+  
+  x <- as.character(x)
+  
+  x <- x[
+    !is.na(x) &
+      trimws(x) != ""
+  ]
+  
+  x <- unique(x)
+  
+  if (length(x) == 0) {
+    return(NA_character_)
+  }
+  
+  paste(
+    sort(x),
+    collapse = "; "
+  )
+}
+
+
+# ------------------------------------------------------------
+# Primeiro valor válido
+# ------------------------------------------------------------
+
+primeiro_valido <- function(x) {
+  
+  x <- as.character(x)
+  
+  x <- x[
+    !is.na(x) &
+      trimws(x) != ""
+  ]
+  
+  if (length(x) == 0) {
+    return(NA_character_)
+  }
+  
+  x[1]
 }
 
 
 # ============================================================
-# 4. CONFERIR AS COLUNAS DA TABELA DE ESPÉCIES
+# 4. LER PLANILHA DE ENTRADA
 # ============================================================
+
+especies <- read_excel(
+  arquivo_especies,
+  sheet = 1
+)
+
+especies <- as.data.frame(
+  especies,
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
 
 names(especies) <- trimws(
   names(especies)
 )
 
-if (!"especie" %in% names(especies)) {
+
+# ============================================================
+# 5. CONFERIR COLUNAS
+# ============================================================
+
+colunas_obrigatorias <- c(
+  "especie",
+  "nome_corrigido",
+  "identificacao",
+  "ocorrencia",
+  "abundancia"
+)
+
+faltando <- setdiff(
+  colunas_obrigatorias,
+  names(especies)
+)
+
+if (length(faltando) > 0) {
+  
   stop(
     paste0(
-      "A tabela precisa possuir uma coluna chamada 'especie'.\n",
-      "Colunas encontradas:\n",
-      paste(names(especies), collapse = ", ")
+      "Colunas ausentes na planilha: ",
+      paste(
+        faltando,
+        collapse = ", "
+      )
     )
   )
 }
 
-if (!"especie_original" %in% names(especies)) {
-  warning(
-    "A coluna 'especie_original' não foi encontrada. ",
-    "A conferência continuará usando a coluna 'especie'."
+
+# ============================================================
+# 6. PREPARAR PLANILHA
+# ============================================================
+
+especies <- especies %>%
+  
+  mutate(
+    
+    especie =
+      trimws(
+        as.character(especie)
+      ),
+    
+    nome_corrigido =
+      trimws(
+        as.character(nome_corrigido)
+      ),
+    
+    nome_corrigido =
+      ifelse(
+        is.na(nome_corrigido) |
+          nome_corrigido == "",
+        NA_character_,
+        nome_corrigido
+      ),
+    
+    identificacao_padronizada =
+      identificacao %>%
+      as.character() %>%
+      str_squish() %>%
+      str_to_lower(),
+    
+    
+    # --------------------------------------------------------
+    # COMPLETAS
+    # --------------------------------------------------------
+    
+    nome_conferido =
+      ifelse(
+        
+        identificacao_padronizada == "completa",
+        
+        ifelse(
+          !is.na(nome_corrigido),
+          nome_corrigido,
+          especie
+        ),
+        
+        NA_character_
+      ),
+    
+    chave_nome_conferido =
+      normalizar_nome(
+        nome_conferido
+      ),
+    
+    
+    # --------------------------------------------------------
+    # INCOMPLETAS
+    #
+    # nome_corrigido contém o gênero
+    # --------------------------------------------------------
+    
+    genero_informado =
+      ifelse(
+        identificacao_padronizada == "incompleta",
+        normalizar_nome(nome_corrigido),
+        NA_character_
+      )
+  )
+
+
+# ============================================================
+# 7. IDENTIFICAR GRUPOS
+# ============================================================
+
+especies$eh_completa <-
+  especies$identificacao_padronizada == "completa"
+
+especies$eh_incompleta <-
+  especies$identificacao_padronizada == "incompleta"
+
+especies$eh_indeterminada <-
+  especies$identificacao_padronizada == "indeterminada"
+
+
+cat("\n============================================\n")
+cat("PLANILHA DE ENTRADA\n")
+cat("============================================\n")
+
+cat(
+  "Total de registros:",
+  nrow(especies),
+  "\n"
+)
+
+cat(
+  "Identificações completas:",
+  sum(
+    especies$eh_completa,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+cat(
+  "Identificações incompletas:",
+  sum(
+    especies$eh_incompleta,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+cat(
+  "Identificações indeterminadas:",
+  sum(
+    especies$eh_indeterminada,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# CONTROLE DAS CATEGORIAS
+# ------------------------------------------------------------
+
+n_classificados <-
+  sum(
+    especies$eh_completa,
+    na.rm = TRUE
+  ) +
+  sum(
+    especies$eh_incompleta,
+    na.rm = TRUE
+  ) +
+  sum(
+    especies$eh_indeterminada,
+    na.rm = TRUE
+  )
+
+
+cat(
+  "Total classificado:",
+  n_classificados,
+  "\n"
+)
+
+cat(
+  "Total não classificado:",
+  nrow(especies) - n_classificados,
+  "\n"
+)
+
+
+categorias_inesperadas <-
+  especies %>%
+  
+  filter(
+    is.na(identificacao_padronizada) |
+      !identificacao_padronizada %in%
+      c(
+        "completa",
+        "incompleta",
+        "indeterminada"
+      )
+  ) %>%
+  
+  count(
+    identificacao_padronizada,
+    name = "quantidade"
+  )
+
+
+if (nrow(categorias_inesperadas) > 0) {
+  
+  cat(
+    "\nATENÇÃO: existem categorias não reconhecidas:\n"
+  )
+  
+  print(
+    categorias_inesperadas,
+    row.names = FALSE
+  )
+  
+} else {
+  
+  cat(
+    "\nOK: todos os registros foram classificados como ",
+    "completa, incompleta ou indeterminada.\n"
   )
 }
 
 
 # ============================================================
-# 5. LER O ARQUIVO TAXON.TXT
+# 8. LER TAXON.TXT
 # ============================================================
+
+cat("\nLendo taxon.txt...\n")
 
 taxon <- read.delim(
   arquivo_taxon,
@@ -168,386 +573,558 @@ taxon <- read.delim(
 
 
 # ============================================================
-# 6. FUNÇÃO PARA PADRONIZAR OS NOMES
+# 9. MANTER APENAS PLANTAE
 # ============================================================
 
-padronizar_nome <- function(x) {
-  
-  x <- as.character(x)
-  
-  # Converter para minúsculas
-  x <- tolower(x)
-  
-  # Trocar underscore por espaço
-  x <- gsub(
-    "_",
-    " ",
-    x,
-    fixed = TRUE
-  )
-  
-  # Remover espaços repetidos
-  x <- gsub(
-    "[[:space:]]+",
-    " ",
-    x
-  )
-  
-  # Remover espaços no início e no final
-  x <- trimws(x)
-  
-  # Transformar textos vazios em NA
-  x[x == ""] <- NA_character_
-  
-  return(x)
-}
-
-
-# ============================================================
-# 7. PADRONIZAR OS NOMES DA TABELA DE ENTRADA
-# ============================================================
-
-especies$nome_busca <- padronizar_nome(
-  especies$especie
-)
-
-
-# ============================================================
-# 8. MANTER APENAS PLANTAS NO DARWIN CORE
-# ============================================================
-
-taxon_plantas <- taxon[
+taxon <- taxon[
   !is.na(taxon$kingdom) &
     tolower(taxon$kingdom) == "plantae",
   ,
   drop = FALSE
 ]
 
-cat(
-  "\nRegistros totais no taxon.txt:",
-  nrow(taxon),
-  "\n"
-)
 
-cat(
-  "Registros de Plantae:",
-  nrow(taxon_plantas),
-  "\n"
-)
+# ============================================================
+# 10. IDs COMO CARACTERE
+# ============================================================
+
+taxon$id <-
+  as.character(
+    taxon$id
+  )
+
+taxon$taxonID <-
+  as.character(
+    taxon$taxonID
+  )
+
+taxon$acceptedNameUsageID <-
+  as.character(
+    taxon$acceptedNameUsageID
+  )
 
 
 # ============================================================
-# 9. CRIAR O NOME SEM AUTORIA NO DARWIN CORE
+# 11. PADRONIZAR STATUS TAXONÔMICO
 # ============================================================
 
-# O nome de comparação será formado por:
-# gênero + epíteto específico + epíteto infraespecífico
+taxon$status_padronizado <-
+  toupper(
+    trimws(
+      as.character(
+        taxon$taxonomicStatus
+      )
+    )
+  )
 
-taxon_plantas$nome_sem_autoria <- paste(
-  taxon_plantas$genus,
-  taxon_plantas$specificEpithet,
-  taxon_plantas$infraspecificEpithet
-)
-
-taxon_plantas$nome_sem_autoria <- gsub(
-  "\\bNA\\b",
-  "",
-  taxon_plantas$nome_sem_autoria
-)
-
-taxon_plantas$nome_sem_autoria <- gsub(
-  "[[:space:]]+",
-  " ",
-  taxon_plantas$nome_sem_autoria
-)
-
-taxon_plantas$nome_sem_autoria <- trimws(
-  taxon_plantas$nome_sem_autoria
-)
-
-taxon_plantas$nome_sem_autoria[
-  taxon_plantas$nome_sem_autoria == ""
+taxon$status_padronizado[
+  is.na(taxon$status_padronizado) |
+    taxon$status_padronizado == ""
 ] <- NA_character_
 
-taxon_plantas$nome_busca <- padronizar_nome(
-  taxon_plantas$nome_sem_autoria
+
+# ============================================================
+# 12. CONSTRUIR NOME SEM AUTORIA
+# ============================================================
+
+montar_nome_sem_autoria <- function(
+    genus,
+  especie,
+  infra
+) {
+  
+  partes <- c(
+    genus,
+    especie,
+    infra
+  )
+  
+  partes <- partes[
+    !is.na(partes) &
+      trimws(partes) != ""
+  ]
+  
+  if (length(partes) == 0) {
+    return(
+      NA_character_
+    )
+  }
+  
+  paste(
+    partes,
+    collapse = " "
+  )
+}
+
+
+taxon$nome_sem_autoria <-
+  mapply(
+    montar_nome_sem_autoria,
+    taxon$genus,
+    taxon$specificEpithet,
+    taxon$infraspecificEpithet,
+    USE.NAMES = FALSE
+  )
+
+
+taxon$nome_busca <-
+  normalizar_nome(
+    taxon$nome_sem_autoria
+  )
+
+
+# ============================================================
+# 13. DEFINIR TAXONID ACEITO
+# ============================================================
+
+taxon$taxonID_aceito <-
+  ifelse(
+    
+    !is.na(
+      taxon$acceptedNameUsageID
+    ) &
+      trimws(
+        taxon$acceptedNameUsageID
+      ) != "",
+    
+    taxon$acceptedNameUsageID,
+    
+    taxon$taxonID
+  )
+
+
+# ============================================================
+# 14. LOCALIZAR REGISTRO ACEITO
+# ============================================================
+
+indice_aceito <- match(
+  taxon$taxonID_aceito,
+  taxon$taxonID
 )
 
 
 # ============================================================
-# 10. REMOVER REGISTROS SEM NOME PARA COMPARAÇÃO
+# 15. RECUPERAR INFORMAÇÕES DO TÁXON ACEITO
 # ============================================================
 
-taxon_plantas <- taxon_plantas[
-  !is.na(taxon_plantas$nome_busca),
-  ,
-  drop = FALSE
-]
-
-
-# ============================================================
-# 11. DEFINIR A PRIORIDADE QUANDO HOUVER MAIS DE UM RESULTADO
-# ============================================================
-
-# Primeiro: nome aceito
-# Depois: sinônimo
-# Depois: outros status
-
-taxon_plantas$prioridade <- ifelse(
-  taxon_plantas$taxonomicStatus == "NOME_ACEITO",
-  1,
+taxon$nome_aceito_reflora <-
   ifelse(
-    taxon_plantas$taxonomicStatus == "SINONIMO",
-    2,
-    3
+    
+    !is.na(
+      indice_aceito
+    ),
+    
+    taxon$scientificName[
+      indice_aceito
+    ],
+    
+    ifelse(
+      
+      !is.na(
+        taxon$acceptedNameUsage
+      ) &
+        trimws(
+          taxon$acceptedNameUsage
+        ) != "",
+      
+      taxon$acceptedNameUsage,
+      
+      taxon$scientificName
+    )
+  )
+
+
+taxon$nome_aceito_sem_autoria <-
+  ifelse(
+    
+    !is.na(
+      indice_aceito
+    ),
+    
+    taxon$nome_sem_autoria[
+      indice_aceito
+    ],
+    
+    taxon$acceptedNameUsage
+  )
+
+
+taxon$chave_nome_aceito <-
+  normalizar_nome(
+    taxon$nome_aceito_sem_autoria
+  )
+
+
+taxon$familia_aceita_reflora <-
+  ifelse(
+    
+    !is.na(
+      indice_aceito
+    ),
+    
+    taxon$family[
+      indice_aceito
+    ],
+    
+    taxon$family
+  )
+
+
+taxon$genero_aceito_reflora <-
+  ifelse(
+    
+    !is.na(
+      indice_aceito
+    ),
+    
+    taxon$genus[
+      indice_aceito
+    ],
+    
+    taxon$genus
+  )
+
+
+# ============================================================
+# 16. CLASSIFICAR RELAÇÃO COM NOME ACEITO
+# ============================================================
+
+taxon$relacao_nome_aceito <-
+  case_when(
+    
+    taxon$status_padronizado ==
+      "NOME_ACEITO" ~
+      "nome_aceito",
+    
+    taxon$status_padronizado ==
+      "SINONIMO" &
+      taxon$nome_busca ==
+      taxon$chave_nome_aceito ~
+      "sinonimo_nome_aceito_igual",
+    
+    taxon$status_padronizado ==
+      "SINONIMO" &
+      taxon$nome_busca !=
+      taxon$chave_nome_aceito ~
+      "sinonimo_nome_aceito_diferente",
+    
+    TRUE ~
+      NA_character_
+  )
+
+
+# ============================================================
+# 17. LER SPECIESPROFILE.TXT
+# ============================================================
+
+cat(
+  "\nLendo speciesprofile.txt...\n"
+)
+
+speciesprofile <- read.delim(
+  arquivo_speciesprofile,
+  header = TRUE,
+  sep = "\t",
+  quote = "",
+  comment.char = "",
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "UTF-8",
+  na.strings = c("", "NA")
+)
+
+speciesprofile$id <-
+  as.character(
+    speciesprofile$id
+  )
+
+
+# ============================================================
+# 18. EXTRAIR LIFE FORM
+# ============================================================
+
+cat(
+  "Extraindo formas de vida...\n"
+)
+
+speciesprofile$lifeForm_extraido <-
+  vapply(
+    speciesprofile$lifeForm,
+    extrair_json,
+    campo = "lifeForm",
+    FUN.VALUE = character(1)
+  )
+
+
+# ============================================================
+# 19. ASSOCIAR LIFE FORM AO TÁXON ACEITO
+# ============================================================
+
+id_aceito <-
+  ifelse(
+    
+    !is.na(
+      indice_aceito
+    ),
+    
+    taxon$id[
+      indice_aceito
+    ],
+    
+    taxon$id
+  )
+
+
+indice_perfil_aceito <- match(
+  id_aceito,
+  speciesprofile$id
+)
+
+
+taxon$lifeForm_reflora <-
+  speciesprofile$lifeForm_extraido[
+    indice_perfil_aceito
+  ]
+
+
+# ============================================================
+# 20. LER DISTRIBUTION.TXT
+# ============================================================
+
+cat(
+  "\nLendo distribution.txt...\n"
+)
+
+distribution <- read.delim(
+  arquivo_distribution,
+  header = TRUE,
+  sep = "\t",
+  quote = "",
+  comment.char = "",
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "UTF-8",
+  na.strings = c("", "NA")
+)
+
+
+# ============================================================
+# 21. PREPARAR DISTRIBUTION
+# ============================================================
+
+distribution$id <-
+  as.character(
+    distribution$id
+  )
+
+
+distribution$establishmentMeans <-
+  toupper(
+    trimws(
+      as.character(
+        distribution$establishmentMeans
+      )
+    )
+  )
+
+
+distribution$establishmentMeans[
+  is.na(
+    distribution$establishmentMeans
+  ) |
+    distribution$establishmentMeans == ""
+] <- NA_character_
+
+
+cat(
+  "\nStatus encontrados em establishmentMeans:\n"
+)
+
+print(
+  sort(
+    unique(
+      distribution$establishmentMeans
+    )
   )
 )
 
-taxon_plantas <- taxon_plantas[
+
+# ============================================================
+# 22. EXTRAIR occurrenceRemarks
+# ============================================================
+
+distribution$endemismo <-
+  vapply(
+    distribution$occurrenceRemarks,
+    extrair_json,
+    campo = "endemism",
+    FUN.VALUE = character(1)
+  )
+
+
+distribution$dominio_fitogeografico <-
+  vapply(
+    distribution$occurrenceRemarks,
+    extrair_json,
+    campo = "phytogeographicDomain",
+    FUN.VALUE = character(1)
+  )
+
+
+# ============================================================
+# 23. RESUMIR DISTRIBUIÇÃO POR ID
+# ============================================================
+
+distribuicao_resumida <-
+  distribution %>%
+  
+  group_by(
+    id
+  ) %>%
+  
+  summarise(
+    
+    establishmentMeans_reflora =
+      juntar_unicos(
+        establishmentMeans
+      ),
+    
+    nativa_reflora =
+      any(
+        establishmentMeans == "NATIVA",
+        na.rm = TRUE
+      ),
+    
+    naturalizada_reflora =
+      any(
+        establishmentMeans == "NATURALIZADA",
+        na.rm = TRUE
+      ),
+    
+    cultivada_reflora =
+      any(
+        establishmentMeans == "CULTIVADA",
+        na.rm = TRUE
+      ),
+    
+    endemismo_reflora =
+      juntar_unicos(
+        endemismo
+      ),
+    
+    dominio_fitogeografico_reflora =
+      juntar_unicos(
+        dominio_fitogeografico
+      ),
+    
+    estados_reflora =
+      juntar_unicos(
+        locationID
+      ),
+    
+    .groups = "drop"
+  )
+
+
+# ============================================================
+# 24. ASSOCIAR DISTRIBUIÇÃO AO TÁXON ACEITO
+# ============================================================
+
+taxon$id_aceito_reflora <-
+  as.character(
+    id_aceito
+  )
+
+
+taxon <- taxon %>%
+  
+  left_join(
+    
+    distribuicao_resumida %>%
+      
+      rename(
+        id_aceito_reflora = id
+      ),
+    
+    by = "id_aceito_reflora"
+  )
+
+
+# ============================================================
+# PARTE A
+# IDENTIFICAÇÕES COMPLETAS
+# ============================================================
+
+
+# ============================================================
+# 25. CRIAR LOOKUP EXATO
+# ============================================================
+
+taxon$prioridade <-
+  case_when(
+    
+    taxon$status_padronizado ==
+      "NOME_ACEITO" ~ 1L,
+    
+    taxon$status_padronizado ==
+      "SINONIMO" ~ 2L,
+    
+    TRUE ~ 3L
+  )
+
+
+taxon_ordenado <- taxon[
   order(
-    taxon_plantas$nome_busca,
-    taxon_plantas$prioridade
+    taxon$nome_busca,
+    taxon$prioridade
   ),
   ,
   drop = FALSE
 ]
 
 
-# ============================================================
-# 12. RESOLVER O NOME ACEITO
-# ============================================================
-
-# Para nomes aceitos:
-# acceptedNameUsage costuma estar vazio.
-# Nesse caso, scientificName é o próprio nome aceito.
-
-taxon_plantas$nome_aceito_reflora <- ifelse(
-  !is.na(taxon_plantas$acceptedNameUsage) &
-    trimws(taxon_plantas$acceptedNameUsage) != "",
-  taxon_plantas$acceptedNameUsage,
-  taxon_plantas$scientificName
-)
-
-
-# ============================================================
-# 13. SELECIONAR AS COLUNAS DO REFLORA
-# ============================================================
-
-taxon_selecionado <- taxon_plantas[
-  ,
-  c(
-    "nome_busca",
-    "taxonID",
-    "scientificName",
-    "nome_aceito_reflora",
-    "acceptedNameUsageID",
-    "kingdom",
-    "phylum",
-    "class",
-    "order",
-    "family",
-    "genus",
-    "specificEpithet",
-    "infraspecificEpithet",
-    "taxonRank",
-    "scientificNameAuthorship",
-    "taxonomicStatus",
-    "nomenclaturalStatus",
-    "references"
-  ),
-  drop = FALSE
-]
-
-
-# ============================================================
-# 14. MANTER APENAS UMA CORRESPONDÊNCIA POR NOME
-# ============================================================
-
-taxon_selecionado <- taxon_selecionado[
-  !duplicated(taxon_selecionado$nome_busca),
+lookup_exato <- taxon_ordenado[
+  !is.na(
+    taxon_ordenado$nome_busca
+  ) &
+    !duplicated(
+      taxon_ordenado$nome_busca
+    ),
   ,
   drop = FALSE
 ]
 
 
 # ============================================================
-# 15. PROCURAR AS ESPÉCIES NO REFLORA
+# 26. CORRESPONDÊNCIA EXATA
 # ============================================================
 
 posicao <- match(
-  especies$nome_busca,
-  taxon_selecionado$nome_busca
+  especies$chave_nome_conferido,
+  lookup_exato$nome_busca
 )
 
 
 # ============================================================
-# 16. ACRESCENTAR AS INFORMAÇÕES À TABELA ORIGINAL
+# 27. CONFERÊNCIA 100%
 # ============================================================
 
-resultado <- especies
-
-resultado$correspondencia_reflora <- ifelse(
-  !is.na(posicao),
-  "Correspondência exata",
-  "Sem correspondência"
-)
-
-resultado$taxonID_reflora <- taxon_selecionado$taxonID[
-  posicao
-]
-
-resultado$nome_encontrado_reflora <- taxon_selecionado$scientificName[
-  posicao
-]
-
-resultado$nome_aceito_reflora <- taxon_selecionado$nome_aceito_reflora[
-  posicao
-]
-
-resultado$acceptedNameUsageID_reflora <-
-  taxon_selecionado$acceptedNameUsageID[
+especies$conferencia_100 <-
+  especies$eh_completa &
+  !is.na(
+    especies$chave_nome_conferido
+  ) &
+  !is.na(
     posicao
-  ]
+  )
 
-resultado$reino_reflora <- taxon_selecionado$kingdom[
-  posicao
-]
-
-resultado$filo_reflora <- taxon_selecionado$phylum[
-  posicao
-]
-
-resultado$classe_reflora <- taxon_selecionado$class[
-  posicao
-]
-
-resultado$ordem_reflora <- taxon_selecionado$order[
-  posicao
-]
-
-resultado$familia_reflora <- taxon_selecionado$family[
-  posicao
-]
-
-resultado$genero_reflora <- taxon_selecionado$genus[
-  posicao
-]
-
-resultado$epiteto_especifico_reflora <-
-  taxon_selecionado$specificEpithet[
-    posicao
-  ]
-
-resultado$epiteto_infraespecifico_reflora <-
-  taxon_selecionado$infraspecificEpithet[
-    posicao
-  ]
-
-resultado$nivel_taxonomico_reflora <-
-  taxon_selecionado$taxonRank[
-    posicao
-  ]
-
-resultado$autoria_reflora <-
-  taxon_selecionado$scientificNameAuthorship[
-    posicao
-  ]
-
-resultado$status_taxonomico_reflora <-
-  taxon_selecionado$taxonomicStatus[
-    posicao
-  ]
-
-resultado$status_nomenclatural_reflora <-
-  taxon_selecionado$nomenclaturalStatus[
-    posicao
-  ]
-
-resultado$link_reflora <- taxon_selecionado$references[
-  posicao
-]
-
-
-# ============================================================
-# 17. RETIRAR A COLUNA AUXILIAR
-# ============================================================
-
-resultado$nome_busca <- NULL
-
-
-# ============================================================
-# 18. CRIAR TABELAS DE RESUMO
-# ============================================================
-
-com_correspondencia <- resultado[
-  resultado$correspondencia_reflora ==
-    "Correspondência exata",
-  ,
-  drop = FALSE
-]
-
-sem_correspondencia <- resultado[
-  resultado$correspondencia_reflora ==
-    "Sem correspondência",
-  ,
-  drop = FALSE
-]
-
-resumo <- data.frame(
-  categoria = c(
-    "Total de nomes consultados",
-    "Correspondência exata",
-    "Sem correspondência"
-  ),
-  quantidade = c(
-    nrow(resultado),
-    nrow(com_correspondencia),
-    nrow(sem_correspondencia)
-  ),
-  percentual = round(
-    c(
-      100,
-      nrow(com_correspondencia) /
-        nrow(resultado) * 100,
-      nrow(sem_correspondencia) /
-        nrow(resultado) * 100
-    ),
-    2
-  ),
-  stringsAsFactors = FALSE
-)
-
-
-# ============================================================
-# 19. SALVAR EM EXCEL
-# ============================================================
-
-arquivo_saida <- file.path(
-  pasta,
-  "especies_conferidas_reflora_taxon.xlsx"
-)
-
-write_xlsx(
-  list(
-    "Todas_especies" = resultado,
-    "Com_correspondencia" = com_correspondencia,
-    "Sem_correspondencia" = sem_correspondencia,
-    "Resumo" = resumo
-  ),
-  arquivo_saida
-)
-
-
-# ============================================================
-# 20. MOSTRAR O RESULTADO
-# ============================================================
 
 cat(
   "\n============================================\n"
 )
 
 cat(
-  "CONFERÊNCIA FINALIZADA\n"
+  "IDENTIFICAÇÕES COMPLETAS\n"
 )
 
 cat(
@@ -555,27 +1132,1352 @@ cat(
 )
 
 cat(
-  "Total de nomes:",
+  "Correspondências exatas 100%:",
+  sum(
+    especies$conferencia_100,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+cat(
+  "Completas sem correspondência exata:",
+  sum(
+    especies$eh_completa &
+      !especies$conferencia_100,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+
+# ============================================================
+# 28. FUNÇÃO DE EXTRAÇÃO
+# ============================================================
+
+extrair_conferidos <- function(coluna) {
+  
+  resultado <-
+    coluna[
+      rep(
+        NA_integer_,
+        nrow(especies)
+      )
+    ]
+  
+  indices <- which(
+    especies$conferencia_100
+  )
+  
+  resultado[
+    indices
+  ] <-
+    coluna[
+      posicao[
+        indices
+      ]
+    ]
+  
+  resultado
+}
+
+
+# ============================================================
+# 29. EXTRAIR TAXONOMIA
+# ============================================================
+
+especies$taxonID_reflora <-
+  extrair_conferidos(
+    lookup_exato$taxonID
+  )
+
+
+especies$taxonID_aceito_reflora <-
+  extrair_conferidos(
+    lookup_exato$taxonID_aceito
+  )
+
+
+especies$nome_encontrado_reflora <-
+  extrair_conferidos(
+    lookup_exato$scientificName
+  )
+
+
+especies$nome_aceito_reflora <-
+  extrair_conferidos(
+    lookup_exato$nome_aceito_reflora
+  )
+
+
+especies$familia_reflora <-
+  extrair_conferidos(
+    lookup_exato$familia_aceita_reflora
+  )
+
+
+especies$genero_reflora <-
+  extrair_conferidos(
+    lookup_exato$genero_aceito_reflora
+  )
+
+
+especies$nivel_taxonomico_reflora <-
+  extrair_conferidos(
+    lookup_exato$taxonRank
+  )
+
+
+especies$autoria_reflora <-
+  extrair_conferidos(
+    lookup_exato$scientificNameAuthorship
+  )
+
+
+especies$status_taxonomico_reflora <-
+  extrair_conferidos(
+    lookup_exato$status_padronizado
+  )
+
+
+especies$relacao_nome_aceito_reflora <-
+  extrair_conferidos(
+    lookup_exato$relacao_nome_aceito
+  )
+
+
+# ============================================================
+# 30. LIFE FORM
+# ============================================================
+
+especies$lifeForm_reflora <-
+  extrair_conferidos(
+    lookup_exato$lifeForm_reflora
+  )
+
+
+# ============================================================
+# 31. ORIGEM
+# ============================================================
+
+especies$establishmentMeans_reflora <-
+  extrair_conferidos(
+    lookup_exato$establishmentMeans_reflora
+  )
+
+
+especies$nativa_reflora <-
+  extrair_conferidos(
+    lookup_exato$nativa_reflora
+  )
+
+
+especies$naturalizada_reflora <-
+  extrair_conferidos(
+    lookup_exato$naturalizada_reflora
+  )
+
+
+especies$cultivada_reflora <-
+  extrair_conferidos(
+    lookup_exato$cultivada_reflora
+  )
+
+
+# ============================================================
+# 32. DISTRIBUIÇÃO
+# ============================================================
+
+especies$endemismo_reflora <-
+  extrair_conferidos(
+    lookup_exato$endemismo_reflora
+  )
+
+
+especies$dominio_fitogeografico_reflora <-
+  extrair_conferidos(
+    lookup_exato$dominio_fitogeografico_reflora
+  )
+
+
+especies$estados_reflora <-
+  extrair_conferidos(
+    lookup_exato$estados_reflora
+  )
+
+
+# ============================================================
+# 33. ALERTA DE SINÔNIMO
+# ============================================================
+
+especies$alerta_sinonimo <-
+  case_when(
+    
+    especies$relacao_nome_aceito_reflora ==
+      "sinonimo_nome_aceito_igual" ~
+      
+      "SINONIMO - nome aceito permanece igual",
+    
+    especies$relacao_nome_aceito_reflora ==
+      "sinonimo_nome_aceito_diferente" ~
+      
+      paste0(
+        "SINONIMO - nome aceito: ",
+        especies$nome_aceito_reflora
+      ),
+    
+    especies$relacao_nome_aceito_reflora ==
+      "nome_aceito" ~
+      
+      "NOME ACEITO",
+    
+    TRUE ~
+      
+      NA_character_
+  )
+
+
+# ============================================================
+# PARTE B
+# IDENTIFICAÇÕES INCOMPLETAS
+# VALIDAÇÃO DOS GÊNEROS
+# ============================================================
+#
+# Não dependemos de taxonRank == "GENUS".
+#
+# Usamos diretamente TODOS os valores existentes na coluna
+# genus do REFLORA.
+#
+# Se um gênero aparece na coluna genus, ele é reconhecido.
+#
+# ============================================================
+
+
+# ============================================================
+# 34. CRIAR BANCO DE GÊNEROS DO REFLORA
+# ============================================================
+
+base_generos <- taxon %>%
+  
+  filter(
+    !is.na(genus),
+    trimws(genus) != ""
+  ) %>%
+  
+  mutate(
+    
+    genero_reflora_original =
+      trimws(
+        as.character(
+          genus
+        )
+      ),
+    
+    genero_busca =
+      normalizar_nome(
+        genero_reflora_original
+      )
+  )
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "VALIDAÇÃO DOS GÊNEROS DAS INCOMPLETAS\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Registros com gênero no taxon.txt:",
+  nrow(base_generos),
+  "\n"
+)
+
+cat(
+  "Gêneros únicos no REFLORA:",
+  length(
+    unique(
+      base_generos$genero_busca
+    )
+  ),
+  "\n"
+)
+
+
+# ============================================================
+# 35. CRIAR RESUMO DE CADA GÊNERO
+# ============================================================
+
+lookup_generos <-
+  base_generos %>%
+  
+  group_by(
+    genero_busca
+  ) %>%
+  
+  summarise(
+    
+    genero_encontrado_reflora =
+      primeiro_valido(
+        genero_reflora_original
+      ),
+    
+    familia_genero_reflora =
+      juntar_unicos(
+        family
+      ),
+    
+    n_registros_genero_reflora =
+      n(),
+    
+    .groups = "drop"
+  )
+
+
+# ============================================================
+# 36. PROCURAR GÊNEROS INFORMADOS
+# ============================================================
+
+posicao_genero <- match(
+  especies$genero_informado,
+  lookup_generos$genero_busca
+)
+
+
+# ============================================================
+# 37. VALIDAR SOMENTE AS INCOMPLETAS
+# ============================================================
+
+especies$genero_validado_reflora <-
+  NA
+
+
+indices_incompletas <- which(
+  especies$eh_incompleta
+)
+
+
+especies$genero_validado_reflora[
+  indices_incompletas
+] <-
+  !is.na(
+    posicao_genero[
+      indices_incompletas
+    ]
+  )
+
+
+# ============================================================
+# 38. FUNÇÃO PARA EXTRAIR INFORMAÇÃO DO GÊNERO
+# ============================================================
+
+extrair_genero_validado <- function(coluna) {
+  
+  resultado <-
+    coluna[
+      rep(
+        NA_integer_,
+        nrow(especies)
+      )
+    ]
+  
+  indices <- which(
+    especies$eh_incompleta &
+      especies$genero_validado_reflora %in% TRUE
+  )
+  
+  resultado[
+    indices
+  ] <-
+    coluna[
+      posicao_genero[
+        indices
+      ]
+    ]
+  
+  resultado
+}
+
+
+# ============================================================
+# 39. RECUPERAR GÊNERO E FAMÍLIA
+# ============================================================
+
+especies$genero_encontrado_reflora <-
+  extrair_genero_validado(
+    lookup_generos$genero_encontrado_reflora
+  )
+
+
+especies$familia_genero_reflora <-
+  extrair_genero_validado(
+    lookup_generos$familia_genero_reflora
+  )
+
+
+especies$n_registros_genero_reflora <-
+  extrair_genero_validado(
+    lookup_generos$n_registros_genero_reflora
+  )
+
+
+# ============================================================
+# 40. CLASSIFICAR VALIDAÇÃO DO GÊNERO
+# ============================================================
+
+especies$status_genero_reflora <-
+  case_when(
+    
+    !especies$eh_incompleta ~
+      
+      NA_character_,
+    
+    is.na(
+      especies$genero_informado
+    ) ~
+      
+      "SEM_GENERO_INFORMADO",
+    
+    especies$genero_validado_reflora %in% TRUE ~
+      
+      "GENERO_VALIDADO",
+    
+    especies$genero_validado_reflora %in% FALSE ~
+      
+      "GENERO_NAO_ENCONTRADO",
+    
+    TRUE ~
+      
+      NA_character_
+  )
+
+
+# ============================================================
+# 41. ALERTA DO GÊNERO
+# ============================================================
+
+especies$alerta_genero <-
+  case_when(
+    
+    especies$status_genero_reflora ==
+      "GENERO_VALIDADO" ~
+      
+      "GENERO VALIDADO NO REFLORA",
+    
+    especies$status_genero_reflora ==
+      "GENERO_NAO_ENCONTRADO" ~
+      
+      "GENERO NAO ENCONTRADO NO REFLORA",
+    
+    especies$status_genero_reflora ==
+      "SEM_GENERO_INFORMADO" ~
+      
+      "SEM GENERO PARA CONFERIR",
+    
+    TRUE ~
+      
+      NA_character_
+  )
+
+
+# ============================================================
+# 42. STATUS GERAL
+# ============================================================
+
+especies$status_enriquecimento <-
+  case_when(
+    
+    especies$eh_completa &
+      especies$conferencia_100 ~
+      
+      "especie_completa_conferencia_100",
+    
+    especies$eh_completa &
+      !especies$conferencia_100 ~
+      
+      "especie_completa_sem_correspondencia_exata",
+    
+    especies$eh_incompleta &
+      is.na(
+        especies$genero_informado
+      ) ~
+      
+      "identificacao_incompleta_sem_genero",
+    
+    especies$eh_incompleta &
+      especies$genero_validado_reflora %in% TRUE ~
+      
+      "identificacao_incompleta_genero_validado",
+    
+    especies$eh_incompleta &
+      especies$genero_validado_reflora %in% FALSE ~
+      
+      "identificacao_incompleta_genero_nao_validado",
+    
+    especies$eh_indeterminada ~
+      
+      "identificacao_indeterminada",
+    
+    TRUE ~
+      
+      "revisar_identificacao"
+  )
+
+
+# ============================================================
+# 43. RESULTADO FINAL
+# ============================================================
+
+resultado <- especies %>%
+  
+  select(
+    
+    # --------------------------------------------------------
+    # ORIGINAL
+    # --------------------------------------------------------
+    
+    especie,
+    nome_corrigido,
+    identificacao,
+    identificacao_padronizada,
+    ocorrencia,
+    abundancia,
+    
+    
+    # --------------------------------------------------------
+    # CONTROLE
+    # --------------------------------------------------------
+    
+    nome_conferido,
+    conferencia_100,
+    status_enriquecimento,
+    
+    
+    # --------------------------------------------------------
+    # IDENTIFICAÇÕES COMPLETAS
+    # --------------------------------------------------------
+    
+    taxonID_reflora,
+    taxonID_aceito_reflora,
+    
+    nome_encontrado_reflora,
+    nome_aceito_reflora,
+    
+    familia_reflora,
+    genero_reflora,
+    
+    nivel_taxonomico_reflora,
+    autoria_reflora,
+    
+    status_taxonomico_reflora,
+    relacao_nome_aceito_reflora,
+    alerta_sinonimo,
+    
+    
+    # --------------------------------------------------------
+    # FORMA DE VIDA
+    # --------------------------------------------------------
+    
+    lifeForm_reflora,
+    
+    
+    # --------------------------------------------------------
+    # ORIGEM
+    # --------------------------------------------------------
+    
+    establishmentMeans_reflora,
+    nativa_reflora,
+    naturalizada_reflora,
+    cultivada_reflora,
+    
+    
+    # --------------------------------------------------------
+    # DISTRIBUIÇÃO
+    # --------------------------------------------------------
+    
+    endemismo_reflora,
+    dominio_fitogeografico_reflora,
+    estados_reflora,
+    
+    
+    # --------------------------------------------------------
+    # IDENTIFICAÇÕES INCOMPLETAS
+    # --------------------------------------------------------
+    
+    genero_informado,
+    genero_validado_reflora,
+    genero_encontrado_reflora,
+    familia_genero_reflora,
+    n_registros_genero_reflora,
+    status_genero_reflora,
+    alerta_genero
+  )
+
+
+# ============================================================
+# 44. ABAS - COMPLETAS
+# ============================================================
+
+conferidas_100 <-
+  resultado %>%
+  
+  filter(
+    identificacao_padronizada == "completa",
+    conferencia_100
+  )
+
+
+completas_nao_encontradas <-
+  resultado %>%
+  
+  filter(
+    identificacao_padronizada == "completa",
+    !conferencia_100
+  )
+
+
+sinonimos <-
+  resultado %>%
+  
+  filter(
+    conferencia_100,
+    status_taxonomico_reflora ==
+      "SINONIMO"
+  )
+
+
+sinonimos_nome_igual <-
+  resultado %>%
+  
+  filter(
+    conferencia_100,
+    relacao_nome_aceito_reflora ==
+      "sinonimo_nome_aceito_igual"
+  )
+
+
+sinonimos_nome_diferente <-
+  resultado %>%
+  
+  filter(
+    conferencia_100,
+    relacao_nome_aceito_reflora ==
+      "sinonimo_nome_aceito_diferente"
+  )
+
+
+nativas <-
+  resultado %>%
+  
+  filter(
+    conferencia_100,
+    nativa_reflora %in% TRUE
+  )
+
+
+naturalizadas <-
+  resultado %>%
+  
+  filter(
+    conferencia_100,
+    naturalizada_reflora %in% TRUE
+  )
+
+
+cultivadas <-
+  resultado %>%
+  
+  filter(
+    conferencia_100,
+    cultivada_reflora %in% TRUE
+  )
+
+
+sem_lifeform <-
+  resultado %>%
+  
+  filter(
+    conferencia_100,
+    is.na(
+      lifeForm_reflora
+    ) |
+      trimws(
+        lifeForm_reflora
+      ) == ""
+  )
+
+
+# ============================================================
+# 45. ABAS - INCOMPLETAS
+# ============================================================
+
+generos_incompletos <-
+  resultado %>%
+  
+  filter(
+    identificacao_padronizada == "incompleta"
+  )
+
+
+generos_validados <-
+  resultado %>%
+  
+  filter(
+    identificacao_padronizada == "incompleta",
+    genero_validado_reflora %in% TRUE
+  )
+
+
+generos_nao_encontrados <-
+  resultado %>%
+  
+  filter(
+    identificacao_padronizada == "incompleta",
+    genero_validado_reflora %in% FALSE
+  )
+
+
+incompletas_sem_genero <-
+  resultado %>%
+  
+  filter(
+    identificacao_padronizada == "incompleta",
+    is.na(
+      genero_informado
+    ) |
+      trimws(
+        genero_informado
+      ) == ""
+  )
+
+
+# ============================================================
+# 46. ABA - INDETERMINADAS
+# ============================================================
+
+indeterminadas <-
+  resultado %>%
+  
+  filter(
+    identificacao_padronizada == "indeterminada"
+  )
+
+
+# ============================================================
+# 47. REGISTROS NÃO CLASSIFICADOS
+# ============================================================
+
+nao_classificados <-
+  resultado %>%
+  
+  filter(
+    is.na(
+      identificacao_padronizada
+    ) |
+      !identificacao_padronizada %in%
+      c(
+        "completa",
+        "incompleta",
+        "indeterminada"
+      )
+  )
+
+
+# ============================================================
+# 48. RESUMO
+# ============================================================
+
+resumo <- data.frame(
+  
+  categoria = c(
+    
+    "Total de registros",
+    
+    "Identificações completas",
+    
+    "Completas - conferência exata 100%",
+    
+    "Completas - sem correspondência exata",
+    
+    "Nomes aceitos",
+    
+    "Sinônimos - total",
+    
+    "Sinônimos com nome aceito igual",
+    
+    "Sinônimos com nome aceito diferente",
+    
+    "Nativas",
+    
+    "Naturalizadas",
+    
+    "Cultivadas",
+    
+    "Com LifeForm",
+    
+    "Sem LifeForm",
+    
+    "Identificações incompletas",
+    
+    "Incompletas - gênero validado",
+    
+    "Incompletas - gênero não encontrado",
+    
+    "Incompletas - sem gênero informado",
+    
+    "Identificações indeterminadas",
+    
+    "Registros não classificados"
+  ),
+  
+  
+  quantidade = c(
+    
+    nrow(
+      resultado
+    ),
+    
+    sum(
+      especies$eh_completa,
+      na.rm = TRUE
+    ),
+    
+    nrow(
+      conferidas_100
+    ),
+    
+    nrow(
+      completas_nao_encontradas
+    ),
+    
+    sum(
+      resultado$status_taxonomico_reflora ==
+        "NOME_ACEITO",
+      na.rm = TRUE
+    ),
+    
+    nrow(
+      sinonimos
+    ),
+    
+    nrow(
+      sinonimos_nome_igual
+    ),
+    
+    nrow(
+      sinonimos_nome_diferente
+    ),
+    
+    nrow(
+      nativas
+    ),
+    
+    nrow(
+      naturalizadas
+    ),
+    
+    nrow(
+      cultivadas
+    ),
+    
+    sum(
+      !is.na(
+        resultado$lifeForm_reflora
+      ) &
+        trimws(
+          resultado$lifeForm_reflora
+        ) != "",
+      na.rm = TRUE
+    ),
+    
+    nrow(
+      sem_lifeform
+    ),
+    
+    nrow(
+      generos_incompletos
+    ),
+    
+    nrow(
+      generos_validados
+    ),
+    
+    nrow(
+      generos_nao_encontrados
+    ),
+    
+    nrow(
+      incompletas_sem_genero
+    ),
+    
+    nrow(
+      indeterminadas
+    ),
+    
+    nrow(
+      nao_classificados
+    )
+  ),
+  
+  stringsAsFactors = FALSE
+)
+
+
+# ============================================================
+# 49. TESTE DE CONSISTÊNCIA
+# ============================================================
+
+total_grupos <-
+  sum(
+    especies$eh_completa,
+    na.rm = TRUE
+  ) +
+  sum(
+    especies$eh_incompleta,
+    na.rm = TRUE
+  ) +
+  sum(
+    especies$eh_indeterminada,
+    na.rm = TRUE
+  )
+
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "TESTE DE CONSISTÊNCIA DAS IDENTIFICAÇÕES\n"
+)
+
+cat(
+  "============================================\n"
+)
+
+cat(
+  "Total da planilha:",
   nrow(resultado),
   "\n"
 )
 
 cat(
-  "Correspondências exatas:",
-  nrow(com_correspondencia),
+  "Completas:",
+  sum(
+    especies$eh_completa,
+    na.rm = TRUE
+  ),
   "\n"
 )
 
 cat(
-  "Sem correspondência:",
-  nrow(sem_correspondencia),
+  "Incompletas:",
+  sum(
+    especies$eh_incompleta,
+    na.rm = TRUE
+  ),
   "\n"
 )
 
 cat(
-  "\nArquivo salvo em:\n",
+  "Indeterminadas:",
+  sum(
+    especies$eh_indeterminada,
+    na.rm = TRUE
+  ),
+  "\n"
+)
+
+cat(
+  "Soma das três categorias:",
+  total_grupos,
+  "\n"
+)
+
+cat(
+  "Não classificados:",
+  nrow(
+    nao_classificados
+  ),
+  "\n"
+)
+
+
+if (
+  total_grupos == nrow(resultado) &&
+    nrow(nao_classificados) == 0
+) {
+  
+  cat(
+    "\nOK: todas as identificações foram classificadas corretamente.\n"
+  )
+  
+} else {
+  
+  warning(
+    paste0(
+      "ATENÇÃO: existem ",
+      nrow(nao_classificados),
+      " registros fora das categorias completa, incompleta e indeterminada."
+    )
+  )
+}
+
+
+# ============================================================
+# 50. SALVAR EXCEL
+# ============================================================
+
+write.xlsx(
+  
+  list(
+    
+    # --------------------------------------------------------
+    # GERAL
+    # --------------------------------------------------------
+    
+    Todas_especies =
+      resultado,
+    
+    Resumo =
+      resumo,
+    
+    
+    # --------------------------------------------------------
+    # COMPLETAS
+    # --------------------------------------------------------
+    
+    Conferidas_100 =
+      conferidas_100,
+    
+    Completas_nao_encontradas =
+      completas_nao_encontradas,
+    
+    Sinonimos =
+      sinonimos,
+    
+    Sinonimos_nome_igual =
+      sinonimos_nome_igual,
+    
+    Sinonimos_nome_diferente =
+      sinonimos_nome_diferente,
+    
+    Nativas =
+      nativas,
+    
+    Naturalizadas =
+      naturalizadas,
+    
+    Cultivadas =
+      cultivadas,
+    
+    Sem_LifeForm =
+      sem_lifeform,
+    
+    
+    # --------------------------------------------------------
+    # INCOMPLETAS
+    # --------------------------------------------------------
+    
+    Generos_incompletos =
+      generos_incompletos,
+    
+    Generos_validados =
+      generos_validados,
+    
+    Generos_nao_encontrados =
+      generos_nao_encontrados,
+    
+    Incompletas_sem_genero =
+      incompletas_sem_genero,
+    
+    
+    # --------------------------------------------------------
+    # INDETERMINADAS
+    # --------------------------------------------------------
+    
+    Indeterminadas =
+      indeterminadas,
+    
+    
+    # --------------------------------------------------------
+    # CONTROLE
+    # --------------------------------------------------------
+    
+    Nao_classificados =
+      nao_classificados
+  ),
+  
+  arquivo_saida,
+  
+  overwrite = TRUE
+)
+
+
+# ============================================================
+# 51. RESULTADOS NO CONSOLE
+# ============================================================
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "CONFERÊNCIA REFLORA FINALIZADA\n"
+)
+
+cat(
+  "============================================\n\n"
+)
+
+print(
+  resumo
+)
+
+
+# ============================================================
+# 52. MOSTRAR INCOMPLETAS
+# ============================================================
+
+cat(
+  "\n--------------------------------------------\n"
+)
+
+cat(
+  "RESULTADO DA CONFERÊNCIA DOS GÊNEROS:\n"
+)
+
+cat(
+  "--------------------------------------------\n"
+)
+
+print(
+  generos_incompletos[
+    ,
+    c(
+      "especie",
+      "nome_corrigido",
+      "genero_informado",
+      "genero_validado_reflora",
+      "genero_encontrado_reflora",
+      "familia_genero_reflora",
+      "n_registros_genero_reflora",
+      "status_genero_reflora",
+      "alerta_genero"
+    )
+  ],
+  row.names = FALSE
+)
+
+
+# ============================================================
+# 53. GÊNEROS NÃO ENCONTRADOS
+# ============================================================
+
+cat(
+  "\n--------------------------------------------\n"
+)
+
+cat(
+  "GÊNEROS NÃO ENCONTRADOS NO REFLORA:\n"
+)
+
+cat(
+  "--------------------------------------------\n"
+)
+
+print(
+  generos_nao_encontrados[
+    ,
+    c(
+      "especie",
+      "nome_corrigido",
+      "genero_informado",
+      "alerta_genero"
+    )
+  ],
+  row.names = FALSE
+)
+
+
+# ============================================================
+# 54. INDETERMINADAS
+# ============================================================
+
+cat(
+  "\n--------------------------------------------\n"
+)
+
+cat(
+  "IDENTIFICAÇÕES INDETERMINADAS:\n"
+)
+
+cat(
+  "--------------------------------------------\n"
+)
+
+cat(
+  "Número de registros indeterminados:",
+  nrow(
+    indeterminadas
+  ),
+  "\n"
+)
+
+
+# ============================================================
+# 55. CATEGORIAS NÃO RECONHECIDAS
+# ============================================================
+
+cat(
+  "\n--------------------------------------------\n"
+)
+
+cat(
+  "CATEGORIAS DE IDENTIFICAÇÃO NÃO RECONHECIDAS:\n"
+)
+
+cat(
+  "--------------------------------------------\n"
+)
+
+if (nrow(nao_classificados) == 0) {
+  
+  cat(
+    "Nenhum registro não classificado.\n"
+  )
+  
+} else {
+  
+  print(
+    nao_classificados[
+      ,
+      c(
+        "especie",
+        "nome_corrigido",
+        "identificacao",
+        "identificacao_padronizada"
+      )
+    ],
+    row.names = FALSE
+  )
+}
+
+
+# ============================================================
+# 56. TESTE DE CONTROLE DE GÊNEROS
+# ============================================================
+
+cat(
+  "\n--------------------------------------------\n"
+)
+
+cat(
+  "TESTE DE CONTROLE DE GÊNEROS:\n"
+)
+
+cat(
+  "--------------------------------------------\n"
+)
+
+generos_teste <- c(
+  "diplotropis",
+  "guadua",
+  "kielmeyera",
+  "machaerium",
+  "mollinedia",
+  "pouteria",
+  "swartzia",
+  "tapirira",
+  "lonchocarpus"
+)
+
+teste_generos <- data.frame(
+  
+  genero =
+    generos_teste,
+  
+  encontrado =
+    generos_teste %in%
+    lookup_generos$genero_busca
+)
+
+print(
+  teste_generos,
+  row.names = FALSE
+)
+
+
+# ============================================================
+# 57. VALORES DE TAXONRANK
+# ============================================================
+
+cat(
+  "\n--------------------------------------------\n"
+)
+
+cat(
+  "VALORES DE taxonRank PRESENTES NO REFLORA:\n"
+)
+
+cat(
+  "--------------------------------------------\n"
+)
+
+print(
+  sort(
+    unique(
+      as.character(
+        taxon$taxonRank
+      )
+    )
+  )
+)
+
+
+# ============================================================
+# 58. ESTABLISHMENT MEANS
+# ============================================================
+
+cat(
+  "\n--------------------------------------------\n"
+)
+
+cat(
+  "VALORES DE establishmentMeans:\n"
+)
+
+cat(
+  "--------------------------------------------\n"
+)
+
+print(
+  sort(
+    unique(
+      distribution$establishmentMeans
+    )
+  )
+)
+
+
+# ============================================================
+# 59. ARQUIVO FINAL
+# ============================================================
+
+cat(
+  "\n============================================\n"
+)
+
+cat(
+  "Arquivo salvo em:\n",
   arquivo_saida,
   "\n"
 )
 
-print(resumo)
+cat(
+  "============================================\n"
+)
